@@ -14,22 +14,22 @@ export const createClient = ({ config }: any) => {
   let sender: any;
   const hooks = tapable(["init", "beforeApplyPlugin", "beforeStart", "start"]);
 
-  const normalPlugin = [NormalLoggerPlugin];
+  const normalPlugin = [ NormalLoggerPlugin ];
 
   const client = {
     init: (config: any) => {
-      hooks.beforeApplyPlugin.emit();
-      hooks.init.emit();
+      hooks.beforeApplyPlugin.callSync();
+      hooks.init.callSync();
       //@ts-ignore
       configManager = new ConfigManager(config);
       configManager.onReady(() => {
-        //@ts-ignore
         // preStartQueue.forEach((e: any) => { this.report(e) })
-        monitor = new Monitor(configManager);
         //@ts-ignore
         builder = new Builder(configManager);
         //@ts-ignore
         sender = new Sender(configManager);
+         //@ts-ignore
+        monitor = new Monitor(configManager);
         started = true;
       });
       inited = true;
@@ -53,7 +53,7 @@ export const createClient = ({ config }: any) => {
     sender: sender,
   };
   function applyPlugin(normalPlugin: any[], customPlugin: any[]) {
-    hooks.beforeApplyPlugin.emit();
+    hooks.beforeApplyPlugin.callSync();
 
     //处理内置NormalPlugin
     normalPlugin.forEach((plugin) => {

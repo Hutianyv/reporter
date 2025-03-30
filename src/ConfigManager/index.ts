@@ -6,7 +6,6 @@ import { baseConfig } from "./baseConfig";
 */
 
 class ConfigManager {
-
     private tapableHooks = ['init', 'beforeApplyDefaultConfig', 'beforeApplyPlugin','beforeReady']
 
     private hooks = tapable(this.tapableHooks);
@@ -16,13 +15,13 @@ class ConfigManager {
         this.config = config
         this.hooks.init.tapSync(() => {
             this.applyBasedDefaultConfig(baseConfig, this.config)
-            this.hooks.beforeReady.emit()
+            this.hooks.beforeReady.callSync()
         })
         this.hooks.beforeReady.tapSync(() => {
             this.ready = true
         })
         //触发ConfigManager的整个初始化流程
-        this.hooks.init.emit()
+        this.hooks.init.callSync()
     }
 
     applyBasedDefaultConfig = (baseConfig: any,customConfig: any) => {
@@ -38,7 +37,7 @@ class ConfigManager {
             }
         }
 
-        this.hooks.beforeApplyDefaultConfig.emit()
+        this.hooks.beforeApplyDefaultConfig.callSync()
         return mergeConfig(baseConfig, customConfig)
       
     }

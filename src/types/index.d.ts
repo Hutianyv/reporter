@@ -1,0 +1,1 @@
+export type pluginName = "client" | "montior" | "builder" | "buildManager" | "sender";

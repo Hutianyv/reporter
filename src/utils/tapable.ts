@@ -8,17 +8,26 @@ import mitt from 'mitt';
 export function tapable<T extends string[]>(hooks: T) {
   type HookMap = {
     [K in T[number]]: {
-      tapSync: (fn: (...args: any[]) => void) => void;
-      emit: (...args: any[]) => void;
+      tapSync: (fn: (...args: unknown[]) => void) => void;
+      //mitt本身的ev.on返回的类型就是void，这边只能这么写
+      tapAsync: (fn: (...args: unknown[]) => void) => void;
+      callSync: (...args: unknown[]) => void;
     };
   };
  
-  const ev = mitt<Record<string, any[]>>();
+  const ev = mitt<Record<string, unknown[]>>();
  
   return hooks.reduce((acc, hookName: T[number]) => {
     acc[hookName] = {
       tapSync: (fn: Function) => ev.on(hookName, (args) => fn(...args)),
-      emit: (...args: any[]) => ev.emit(hookName, args),
+      tapAsync: (fn: Function) => ev.on(hookName, (...args: any[]) => {
+        Promise.resolve()
+          .then(() => fn(...args))
+          .catch((e) => {
+            console.error(e);
+          })
+      }),
+      callSync: (...args: unknown[]) => ev.emit(hookName, args),
     };
     return acc;
   }, {} as HookMap);

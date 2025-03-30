@@ -37,12 +37,15 @@ declare namespace Monitor {
         userAgentData: boolean;//比如：用户设备类型、操作系统、浏览器、进入页面方式等信息
     }
     interface PageViewMonitorConfig {
-        url?: string; //时间上报地址
+        url?: string; //页面显示信息上报地址
         pv: boolean;
         uv: boolean;
         time: boolean;//用户页面停留时长
     }
-
+    export interface RawMonitorMessageData {
+        type: string;
+        message: string;
+    }
     export interface MonitorConfig {
         error: ErrorMonitorConfig
         performance: PerformanceMonitorConfig
