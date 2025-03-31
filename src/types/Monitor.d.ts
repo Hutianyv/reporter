@@ -44,7 +44,10 @@ declare namespace Monitor {
     }
     export interface RawMonitorMessageData {
         type: string;
-        message: string;
+        info: {} & {
+            type: 'error' | 'performance' | 'userAction' | 'userData' | 'pageView';
+            subType?: string;
+        };
     }
     export interface MonitorConfig {
         error: ErrorMonitorConfig

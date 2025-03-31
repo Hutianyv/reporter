@@ -16,17 +16,18 @@ import UserActionMonitor from './userActionMonitor';
 import UserDataMonitor from './userDataMonitor';
 import { tapable } from '@/utils/tapable';
 
-class Monitor {
+class MainMonitor {
     private config: Monitor.MonitorConfig;
-    private hooks = tapable(["beforeInit", "beforeStart", "beforeStop"]);
-    private rawMonitorDataQueue: Monitor.RawMonitorMessageData[] = [];
+  private hooks = tapable(["beforeInit", "beforeStart", "beforeStop"]);
+  private enqueue: (data: Monitor.RawMonitorMessageData) => void;
     private errorMontior?: ErrorMontior;
     private performanceMonitor?: PerformanceMonitor;
     private pageViewMonitor?: PageViewMonitor;
     private userActionMonitor?: UserActionMonitor;
     private userDataMonitor?: UserDataMonitor;
-  constructor(configManager: ConfigManager) {
-      this.config = configManager.getMonitorConfig()
+  constructor(configManager: ConfigManager, enqueue: (data: Monitor.RawMonitorMessageData) => void) {
+    this.config = configManager.getMonitorConfig()
+    this.enqueue = enqueue
       this.hooks.beforeInit.callSync()
       this.init(this.config)
   }
@@ -69,33 +70,13 @@ class Monitor {
         this.userActionMonitor?.start()
         this.userDataMonitor?.start()
         this.pageViewMonitor?.start()
-
-        //开启循环收集的信息进入builder加工
-        this.viaLoop(this.rawMonitorDataQueue)
-  }
-
-    enqueue(data: Monitor.RawMonitorMessageData) {
-      this.rawMonitorDataQueue.push(data)
-  }
-    //在空闲时就去把收集到的信息上交给builder
-    viaLoop(queue: Monitor.RawMonitorMessageData[]) {
-        requestIdleCallback((idle) => {
-            while (idle.timeRemaining() > 0 && queue.length > 0) { 
-                const data = queue.shift()
-                if (data) {
-                    this.via2Builder(data)
-                }
-            }
-            this.viaLoop(queue)
-      })
     }
-    via2Builder(message: Monitor.RawMonitorMessageData) {
-       
-    }
+  
+  
     stop() {
       this.hooks.beforeStop.callSync()
     // 停止监控
   }
 }
 
-export default Monitor;
+export default MainMonitor;

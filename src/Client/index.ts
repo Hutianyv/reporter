@@ -1,4 +1,6 @@
 import { tapable } from "@/utils/tapable";
+import { WorkLoopQueue } from "@/utils/workLoopQueue";
+import MainMonitor from "@/Monitor";
 import { NormalLoggerPlugin } from "@/Plugins/NormalLoggerPlugin";
 /**
  * 实例主体，负责串联配置管理器、收集器、组装器和发送器，串通整个流程，同时提供生命周期监听以供扩展 SDK 功能。
@@ -7,14 +9,16 @@ import { NormalLoggerPlugin } from "@/Plugins/NormalLoggerPlugin";
 export const createClient = ({ config }: any) => {
   let inited = false;
   let started = false;
-  let preStartQueue = new Set();
+  let preStartQueue = new WorkLoopQueue<Monitor.RawMonitorMessageData>(
+    processQueueItem
+  );
   let configManager: any;
   let monitor: any;
   let builder: any;
   let sender: any;
   const hooks = tapable(["init", "beforeApplyPlugin", "beforeStart", "start"]);
 
-  const normalPlugin = [ NormalLoggerPlugin ];
+  const normalPlugin = [NormalLoggerPlugin];
 
   const client = {
     init: (config: any) => {
@@ -23,26 +27,35 @@ export const createClient = ({ config }: any) => {
       //@ts-ignore
       configManager = new ConfigManager(config);
       configManager.onReady(() => {
-        // preStartQueue.forEach((e: any) => { this.report(e) })
         //@ts-ignore
         builder = new Builder(configManager);
         //@ts-ignore
         sender = new Sender(configManager);
-         //@ts-ignore
-        monitor = new Monitor(configManager);
+        //初始化全局监控
+        monitor = new MainMonitor(configManager, preStartQueue.enqueue);
         started = true;
       });
       inited = true;
     },
-    report: (data: any) => {
+    report: (data: Monitor.RawMonitorMessageData) => {
       if (!started) {
-        preStartQueue.add(data);
+        preStartQueue.enqueue(data);
       } else {
-        const builderData = builder.build(data);
-        builderData && sender.send(builderData);
+        handleReport(data)
       }
     },
   };
+
+  function processQueueItem(itemdata: Monitor.RawMonitorMessageData) {
+    handleReport(itemdata)
+  }
+
+  function handleReport(itemdata: Monitor.RawMonitorMessageData) {
+    if (itemdata){
+      const builderData = builder.build(itemdata);
+      builderData && sender.send(builderData);
+    }
+  }
 
   //挂载插件系统
   const PluginType2Instance = {
