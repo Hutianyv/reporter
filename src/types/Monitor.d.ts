@@ -42,13 +42,27 @@ declare namespace Monitor {
         uv: boolean;
         time: boolean;//用户页面停留时长
     }
-    export interface RawMonitorMessageData {
-        type: string;
-        info: {} & {
-            type: 'error' | 'performance' | 'userAction' | 'userData' | 'pageView';
-            subType?: string;
+
+    type BooleanKeys<T> = {
+        [K in keyof T]: T[K] extends boolean ? K : never;
+    }[keyof T];
+
+    type SubTypeMap = {
+        error: BooleanKeys<ErrorMonitorConfig>;
+        performance: BooleanKeys<PerformanceMonitorConfig>;
+        userAction: BooleanKeys<UserActionMonitorConfig>;
+        userData: BooleanKeys<UserDataMonitorConfig>;
+        pageView: BooleanKeys<PageViewMonitorConfig>;
+    };
+
+    export type RawMonitorMessageData = {
+        [K in keyof SubTypeMap]: {
+            type: K;
+            info: {
+                subType?: SubTypeMap[K];
+            } & {};
         };
-    }
+    }[keyof SubTypeMap];
     export interface MonitorConfig {
         error: ErrorMonitorConfig
         performance: PerformanceMonitorConfig

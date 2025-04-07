@@ -1,35 +1,39 @@
 import { tapable } from "@/utils/tapable";
 import { WorkLoopQueue } from "@/utils/workLoopQueue";
+import ConfigManager from "@/ConfigManager";
 import MainMonitor from "@/Monitor";
+import Builder from "@/Builder";
+import Sender from "@/Sender";
+import { Plugin } from "@/types/Client";
 import { NormalLoggerPlugin } from "@/Plugins/NormalLoggerPlugin";
+import { NormalLocaltimePlugin } from "@/Plugins/NormalLocaltimePlugin";
+import { NormalUserAgentPlugin } from "@/Plugins/NormalUserAgentPlugin";
+import { NormalIdPlugin } from "@/Plugins/NormalIdPlugin";
 /**
  * 实例主体，负责串联配置管理器、收集器、组装器和发送器，串通整个流程，同时提供生命周期监听以供扩展 SDK 功能。
  */
-//@ts-ignore
-export const createClient = ({ config }: any) => {
+
+export const createClient = (config: any) => {
   let inited = false;
   let started = false;
   let preStartQueue = new WorkLoopQueue<Monitor.RawMonitorMessageData>(
     processQueueItem
   );
-  let configManager: any;
-  let monitor: any;
-  let builder: any;
-  let sender: any;
+  let configManager: ConfigManager;
+  let monitor: MainMonitor;
+  let builder: Builder;
+  let sender: Sender;
   const hooks = tapable(["init", "beforeApplyPlugin", "beforeStart", "start"]);
 
-  const normalPlugin = [NormalLoggerPlugin];
+  const normalPlugin: Plugin[] = [NormalLoggerPlugin, NormalLocaltimePlugin, NormalUserAgentPlugin, NormalIdPlugin];
 
   const client = {
     init: (config: any) => {
       hooks.beforeApplyPlugin.callSync();
       hooks.init.callSync();
-      //@ts-ignore
       configManager = new ConfigManager(config);
       configManager.onReady(() => {
-        //@ts-ignore
         builder = new Builder(configManager);
-        //@ts-ignore
         sender = new Sender(configManager);
         //初始化全局监控
         monitor = new MainMonitor(configManager, preStartQueue.enqueue);
@@ -37,44 +41,42 @@ export const createClient = ({ config }: any) => {
       });
       inited = true;
     },
-    report: (data: Monitor.RawMonitorMessageData) => {
+    report: (rawMonitorMessageData: Monitor.RawMonitorMessageData) => {
       if (!started) {
-        preStartQueue.enqueue(data);
+        preStartQueue.enqueue(rawMonitorMessageData);
       } else {
-        handleReport(data)
+        handleReport(rawMonitorMessageData);
       }
     },
   };
 
-  function processQueueItem(itemdata: Monitor.RawMonitorMessageData) {
-    handleReport(itemdata)
+  function processQueueItem(rawMonitorMessageData: Monitor.RawMonitorMessageData) {
+    handleReport(rawMonitorMessageData);
   }
 
-  function handleReport(itemdata: Monitor.RawMonitorMessageData) {
-    if (itemdata){
-      const builderData = builder.build(itemdata);
-      builderData && sender.send(builderData);
+  function handleReport(rawMonitorMessageData: Monitor.RawMonitorMessageData) {
+    if (rawMonitorMessageData) {
+      const buildData = builder.build(rawMonitorMessageData);
+      buildData && sender.send(buildData);
     }
   }
 
-  //挂载插件系统
-  const PluginType2Instance = {
-    client: client,
-    configManager: configManager,
-    monitor: monitor,
-    builder: builder,
-    sender: sender,
-  };
-  function applyPlugin(normalPlugin: any[], customPlugin: any[]) {
+  function applyPlugin(normalPlugin: Plugin[], customPlugin: Plugin[]) {
+    //挂载插件系统
+    const PluginType2Instance = {
+      configManager: configManager,
+      monitor: monitor,
+      builder: builder,
+      sender: sender,
+    };
+
     hooks.beforeApplyPlugin.callSync();
 
     //处理内置NormalPlugin
     normalPlugin.forEach((plugin) => {
       if (typeof plugin === "function") {
-        //@ts-ignore
         plugin(PluginType2Instance[plugin.type]);
       } else {
-        //@ts-ignore
         plugin.apply(PluginType2Instance[plugin.type]);
       }
     });
@@ -82,10 +84,8 @@ export const createClient = ({ config }: any) => {
     if (Array.isArray(customPlugin)) {
       customPlugin.forEach((plugin) => {
         if (typeof plugin === "function") {
-          //@ts-ignore
           plugin(PluginType2Instance[plugin.type]);
         } else {
-          //@ts-ignore
           plugin.apply(PluginType2Instance[plugin.type]);
         }
       });

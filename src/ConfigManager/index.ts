@@ -9,20 +9,27 @@ class ConfigManager {
     private tapableHooks = ['init', 'beforeApplyDefaultConfig', 'beforeApplyPlugin','beforeReady']
 
     private hooks = tapable(this.tapableHooks);
-    private config: any = {}
+    private config: Partial<any> = {}
     private ready = false
-    constructor(config: any) {
+    constructor(config: Partial<any>) {
         this.config = config
+       this.initTapDefaultHooks()
+        //触发ConfigManager的整个初始化流程
+        this.hooks.init.callSync()
+    }
+
+    //初始化整个默认hook的挂载流程
+    initTapDefaultHooks = () => {
         this.hooks.init.tapSync(() => {
             this.applyBasedDefaultConfig(baseConfig, this.config)
             this.hooks.beforeReady.callSync()
         })
         this.hooks.beforeReady.tapSync(() => {
             this.ready = true
+            this.hooks.ready.callSync()
         })
-        //触发ConfigManager的整个初始化流程
-        this.hooks.init.callSync()
     }
+
 
     applyBasedDefaultConfig = (baseConfig: any,customConfig: any) => {
         //这里将默认配置合并到config中，
@@ -48,26 +55,25 @@ class ConfigManager {
         return {
             error: this.config.error,
             performance: this.config.performance,
-            time: this.config.time,
             userAction: this.config.userAction,
             userData: this.config.userData,
             pageView: this.config.pageView
         }
     }
 
-    getBuilderConfig = () => {
+    getBuilderConfig = (): any => {
         return {
            
         }
     }
 
-    geSenderConfig = () => {
+    getSenderConfig = (): any => {
         return {
             
         }
     }
 
-    onReady = (callback: any) => {
+    onReady = (callback: Function) => {
         if (!this.ready) {
             this.hooks.ready.tapSync(() => {
                 callback()

@@ -2,10 +2,14 @@
  * 
  * @param Builder 构建器
  */
-export function NormalLocaltimePlugin(Builder: any) {
-    Builder.hooks.ready.tapSync(() => {
+import { pluginName, ReporterMessage } from "@/types";
+import Builder from "@/Builder";
+export function NormalLocaltimePlugin(Builder: Builder) {
+  Builder.hooks.beforeBuild.tapSync((RawMonitorMessageData: ReporterMessage) => {
+    RawMonitorMessageData.reportTimeStamp = Date.now();
+    // 这里注入上报时间信息
     console.log("NormalLoggetPlugin ready");
   });
 }
 
-NormalLocaltimePlugin.type = "Builder";
+NormalLocaltimePlugin.type = "builder" as pluginName

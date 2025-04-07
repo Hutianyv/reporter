@@ -25,10 +25,6 @@ class ErrorMontior {
             console.log(e)
         })
     }
-    via2Builder(message: string) {
-        //将错误信息传递给builder
-        console.log('via2Report')
-    }
     start() { 
         this.hooks.beforeStart.callSync()
         //开始监控
