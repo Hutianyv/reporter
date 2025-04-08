@@ -1,9 +1,9 @@
-import { tapable } from "@/utils/tapable";
-import { baseConfig } from "./baseConfig";
 /**
 * 配置管理器，负责配置逻辑，比如合并初始配置和用户配置、拉取远端配置等功能。
 * 一般需要传入默认配置，支持用户手动配置，当配置完成时， ConfigManager 会变更 ready 状态，所以它也支持被订阅，以便当 ready 时或者配置变更时通知到订阅方。
 */
+import { tapable } from "@/utils/tapable";
+import { baseConfig } from "./baseConfig";
 
 class ConfigManager {
     private tapableHooks = ['init', 'beforeApplyDefaultConfig', 'beforeApplyPlugin','beforeReady']

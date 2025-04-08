@@ -55,14 +55,27 @@ declare namespace Monitor {
         pageView: BooleanKeys<PageViewMonitorConfig>;
     };
 
+    interface SubTypeExtraInfoMap {
+        pv: { url: string };
+        uv: { url: string };
+        jsError: { errorMsg: string; line: number };
+        assetsError: { resourceUrl: string };
+        ajaxError: { status: number };
+    }
+
     export type RawMonitorMessageData = {
-        [K in keyof SubTypeMap]: {
-            type: K;
-            info: {
-                subType?: SubTypeMap[K];
-            } & {};
-        };
+        [K in keyof SubTypeMap]: SubTypeMap[K] extends infer S
+            ? S extends any
+                ? {
+                    type: K;
+                    info: {
+                        subType: S;
+                    } & (S extends keyof SubTypeExtraInfoMap ? SubTypeExtraInfoMap[S] : {});
+                }
+                : never
+            : never;
     }[keyof SubTypeMap];
+    
     export interface MonitorConfig {
         error: ErrorMonitorConfig
         performance: PerformanceMonitorConfig

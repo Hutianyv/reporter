@@ -8,13 +8,13 @@
  * @description 主监控类
  */
 
+import { tapable } from "@/utils/tapable";
 import ConfigManager from "@/ConfigManager";
 import ErrorMontior from "./errorMonitor";
 import PerformanceMonitor from "./performanceMonitor";
 import PageViewMonitor from "./pageViewMonitor";
 import UserActionMonitor from "./userActionMonitor";
 import UserDataMonitor from "./userDataMonitor";
-import { tapable } from "@/utils/tapable";
 
 class MainMonitor {
   private config: Monitor.MonitorConfig;

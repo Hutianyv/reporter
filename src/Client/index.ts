@@ -1,4 +1,3 @@
-import { tapable } from "@/utils/tapable";
 import { WorkLoopQueue } from "@/utils/workLoopQueue";
 import ConfigManager from "@/ConfigManager";
 import MainMonitor from "@/Monitor";
@@ -15,7 +14,7 @@ import { NormalIdPlugin } from "@/Plugins/NormalIdPlugin";
 
 export const createClient = (config: any) => {
   let inited = false;
-  let started = false;
+  let canStart = false;
   let preStartQueue = new WorkLoopQueue<Monitor.RawMonitorMessageData>(
     processQueueItem
   );
@@ -23,26 +22,38 @@ export const createClient = (config: any) => {
   let monitor: MainMonitor;
   let builder: Builder;
   let sender: Sender;
-  const hooks = tapable(["init", "beforeApplyPlugin", "beforeStart", "start"]);
 
   const normalPlugin: Plugin[] = [NormalLoggerPlugin, NormalLocaltimePlugin, NormalUserAgentPlugin, NormalIdPlugin];
 
   const client = {
     init: (config: any) => {
-      hooks.beforeApplyPlugin.callSync();
-      hooks.init.callSync();
       configManager = new ConfigManager(config);
       configManager.onReady(() => {
         builder = new Builder(configManager);
         sender = new Sender(configManager);
         //初始化全局监控
         monitor = new MainMonitor(configManager, preStartQueue.enqueue);
-        started = true;
+        //应用所有插件
+        applyPlugin(normalPlugin, config.plugin);
+        canStart = true;
       });
       inited = true;
     },
+
+    start: () => { 
+      if (!canStart) return;
+      monitor.start();
+      handleReport({
+        type: "pageView",
+        info: {
+          subType: "pv",
+          url: window.location.href,
+        },
+      });
+    },
+
     report: (rawMonitorMessageData: Monitor.RawMonitorMessageData) => {
-      if (!started) {
+      if (!canStart) {
         preStartQueue.enqueue(rawMonitorMessageData);
       } else {
         handleReport(rawMonitorMessageData);
@@ -70,8 +81,6 @@ export const createClient = (config: any) => {
       sender: sender,
     };
 
-    hooks.beforeApplyPlugin.callSync();
-
     //处理内置NormalPlugin
     normalPlugin.forEach((plugin) => {
       if (typeof plugin === "function") {
@@ -93,9 +102,5 @@ export const createClient = (config: any) => {
       throw new Error("plugin must be an array");
     }
   }
-  hooks.beforeApplyPlugin.tapSync(() => {
-    applyPlugin(normalPlugin, config.plugin);
-  });
-
   return client;
 };
