@@ -58,9 +58,10 @@ declare namespace Monitor {
     interface SubTypeExtraInfoMap {
         pv: { url: string };
         uv: { url: string };
-        jsError: { errorMsg: string; line: number };
-        assetsError: { resourceUrl: string };
-        ajaxError: { status: number };
+        jsError: { errorMsg: string; line: number; col: number; stack: any; filename: string };
+        assetsError: { resourceUrl: string; tagName: string; outerHTML: string };
+        ajaxError: { status: number; statusText: string; url?: string; method?: string; response?: any; costTime?: number };
+        unhandledrejectionError: { reason: string; stack: any };
     }
 
     export type RawMonitorMessageData = {
