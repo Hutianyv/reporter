@@ -104,6 +104,7 @@ class PerformanceMontior {
         type: "performance",
         info: {
           subType: "navigation",
+          pageUrl: window.location.href,
           ...timingData,
         },
       });
@@ -116,16 +117,24 @@ class PerformanceMontior {
     }
   }
   private observePaintMetrics() {
+    if (!this.isSupported("paint")) return;
     //首次绘制指标
-    const fcp = performance.getEntriesByType("paint")[1];
-    this.enqueue({
-      type: "performance",
-      info: {
-        subType: "paint",
-        extraDesc: "fcp",
-        value: fcp.startTime,
-      },
-    });
+    const paintEntries = performance.getEntriesByType("paint");
+    const fcpEntry = paintEntries.find(
+      (entry) => entry.name === "first-contentful-paint"
+    );
+
+    if (fcpEntry) {
+      this.enqueue({
+        type: "performance",
+        info: {
+          subType: "paint",
+          extraDesc: "fcp",
+          pageUrl: window.location.href,
+          value: fcpEntry.startTime,
+        },
+      });
+    }
     //LCP监控
     this.createObserver("largest-contentful-paint", (entries) => {
       const lastEntry = entries[entries.length - 1] as LargestContentfulPaint;
@@ -134,6 +143,7 @@ class PerformanceMontior {
         info: {
           subType: "paint",
           extraDesc: "lcp",
+          pageUrl: window.location.href,
           value: lastEntry.renderTime || lastEntry.loadTime,
           element: lastEntry.element?.tagName,
           size: lastEntry.size,
@@ -142,28 +152,43 @@ class PerformanceMontior {
       });
     });
 
-    //CLS监控
+    //CLS监控  TODO: 可能这里的individualShifts还不够详细emmm，之后要改
     let clsValue = 0;
+    let lastCLSReportTime = 0;
+    const REPORT_INTERVAL = 5000;
     this.createObserver("layout-shift", (entries) => {
-      entries.forEach((entry) => {
-        if (!(entry as LayoutShift).hadRecentInput) {
-          clsValue += (entry as LayoutShift).value;
-          this.enqueue({
-            type: "performance",
-            info: {
-              subType: "paint",
-              extraDesc: "cls",
-              value: clsValue,
-              sources: (entry as LayoutShift).sources?.map((s) =>
-                s.node?.toString()
-              ),
-            },
-          });
-        }
-      });
+      const currentTime = Date.now();
+      const individualShifts = entries
+        .filter(
+          (entry: PerformanceEntry): entry is LayoutShift =>
+            !(entry as LayoutShift).hadRecentInput
+        )
+        .map((entry: LayoutShift) => {
+          clsValue += entry.value;
+          return {
+            value: entry.value,
+            sources: entry.sources?.map((s) => s.node?.toString()),
+            timestamp: entry.startTime,
+            duration: entry.duration,
+          };
+        });
+      if (
+        individualShifts.length > 0 &&
+        currentTime - lastCLSReportTime >= REPORT_INTERVAL
+      ) {
+        this.enqueue({
+          type: "performance",
+          info: {
+            subType: "paint",
+            extraDesc: "cls",
+            pageUrl: window.location.href,
+            value: clsValue,
+            individualShifts: individualShifts,
+          },
+        });
+      }
     });
   }
-
   private observeResourceLoading() {
     this.createObserver("resource", (entries) => {
       entries.forEach((entry) => {
@@ -174,10 +199,10 @@ class PerformanceMontior {
           type: "performance",
           info: {
             subType: "resource",
+            pageUrl: window.location.href,
             initiatorType: resourceEntry.initiatorType,
-            name: resourceEntry.name,
+            url: resourceEntry.name,
             duration: resourceEntry.duration,
-            protocol: new URL(resourceEntry.name).protocol.replace(":", ""),
             transferSize: resourceEntry.transferSize,
             encodedBodySize: resourceEntry.encodedBodySize,
           },
@@ -195,6 +220,7 @@ class PerformanceMontior {
             type: "performance",
             info: {
               subType: "longTask",
+              pageUrl: window.location.href,
               duration: longTaskEntry.duration,
               container:
                 longTaskEntry.attribution[0]?.containerType || "window",

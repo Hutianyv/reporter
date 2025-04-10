@@ -86,27 +86,31 @@ declare namespace Monitor {
       encodedBodySize: number;
       decodedBodySize: number;
     };
-      paint: {
-          extraDesc: 'fcp' | 'lcp' | 'fid' | 'cls' | 'inp' | 'ttfb' | 'load';
-          value: number;
-          element?: string;
-          size?: number;
-          url?: string;
-          sources? : string[];
-      };
-      resource: {
-          initiatorType: string;
-          name: string;
-          duration: number;
-          protocol: string;
-          transferSize: number;
-          encodedBodySize: number;
-      };
-      longTask: {
-          duration: number;
-          container: 'object' | 'window' | 'iframe' | 'embed'
-          context?: string;
-      };
+    paint: {
+      extraDesc: "fcp" | "lcp" | "fid" | "cls" | "inp" | "ttfb" | "load";
+      value: number;
+      element?: string;
+      size?: number;
+      url?: string;
+      individualShifts?: {
+        value: number;
+        sources: string[];
+        timestamp: number;
+        duration: number;
+      }[];
+    };
+    resource: {
+      initiatorType: string;
+      url: string;
+      duration: number;
+      transferSize: number;
+      encodedBodySize: number;
+    };
+    longTask: {
+      duration: number;
+      container: "object" | "window" | "iframe" | "embed";
+      context?: string;
+    };
   }
 
   export type RawMonitorMessageData = {
@@ -115,7 +119,8 @@ declare namespace Monitor {
         ? {
             type: K;
             info: {
-              subType: S;
+                subType: S;
+                pageUrl: string;
             } & (S extends keyof SubTypeExtraInfoMap
               ? SubTypeExtraInfoMap[S]
               : {});

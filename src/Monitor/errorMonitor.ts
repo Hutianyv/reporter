@@ -52,6 +52,7 @@ class ErrorMontior {
         type: "error",
         info: {
           subType: "jsError",
+          pageUrl: window.location.href,
           errorMsg: event.message,
           filename: event.filename,
           line: event.lineno,
@@ -80,6 +81,7 @@ class ErrorMontior {
             type: "error",
             info: {
               subType: "assetsError",
+              pageUrl: window.location.href,
               resourceUrl:
                 (target as HTMLImageElement).src ||
                 (target as HTMLLinkElement).href ||
@@ -101,6 +103,7 @@ class ErrorMontior {
         type: "error",
         info: {
           subType: "unhandledrejectionError",
+          pageUrl: window.location.href,
           reason: event.reason?.message || String(event.reason),
           stack: event.reason?.stack,
         },
@@ -131,6 +134,7 @@ class ErrorMontior {
               type: "error",
               info: {
                 subType: "ajaxError",
+                pageUrl: window.location.href,
                 status: this.status,
                 statusText: this.statusText,
                 url: this.url,
@@ -160,6 +164,7 @@ class ErrorMontior {
           type: "error",
           info: {
             subType: "ajaxError",
+            pageUrl: window.location.href,
             status: response.status,
             statusText: response.statusText,
             url: response.url,
