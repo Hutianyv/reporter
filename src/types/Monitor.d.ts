@@ -12,6 +12,8 @@ declare namespace Monitor {
     resource: boolean;
     navigation: boolean;
     longTask: boolean;
+    memory: boolean;
+    whiteScreen: boolean;
   }
   //这个没设计好，再看看，要反映用户的兴趣和偏好
   interface UserActionMonitorConfig {
@@ -110,6 +112,14 @@ declare namespace Monitor {
       duration: number;
       container: "object" | "window" | "iframe" | "embed";
       context?: string;
+    };
+    memory: {
+      extraDesc: "memoryLeak" | 'memoryOverflow'
+      maxUsageAlert?: number
+      value: number;
+    };
+    whiteScreen: {
+      emptyPoints: number;
     };
   }
 

@@ -24,6 +24,14 @@ interface TaskAttribution {
   readonly containerName?: string;
 }
 
+interface EnhancedPerformance extends Performance {
+  memory?: {
+    jsHeapSizeLimit: number;
+    totalJSHeapSize: number;
+    usedJSHeapSize: number;
+  };
+}
+
 class PerformanceMontior {
   private hooks = tapable(["beforeStart", "afterStart", "onError"]);
   private config: Monitor.MonitorConfig["performance"];
@@ -189,6 +197,7 @@ class PerformanceMontior {
       }
     });
   }
+
   private observeResourceLoading() {
     this.createObserver("resource", (entries) => {
       entries.forEach((entry) => {
@@ -239,15 +248,153 @@ class PerformanceMontior {
       this.observeMemoryUsage();
     }
 
-    // 2. 首屏渲染监控
-    this.observeFirstScreenPaint();
+    // 2. 白屏监控
+    this.observeWhiteScreen();
 
     // 3. 交互响应延迟
     this.observeInteractionLatency();
   }
 
-  private observeMemoryUsage() {}
-  private observeFirstScreenPaint() {}
+  private observeMemoryUsage() {
+    if (!("memory" in performance)) return;
+
+    const config = {
+      samplingInterval: 5000, //每5秒采样一次
+      leakThreshold: 3, //连续增长超过3次告警
+      maxUsageAlert: 1024, //内存超过1GB告警（单位MB）
+    };
+
+    let lastUsedJSHeap = 0;
+    let growthCount = 0;
+    const perf = window.performance as EnhancedPerformance;
+    const checkMemory = () => {
+      const { jsHeapSizeLimit, totalJSHeapSize, usedJSHeapSize } = perf.memory!;
+
+      const usedMB = +(usedJSHeapSize / 1024 / 1024).toFixed(2);
+      const totalMB = +(totalJSHeapSize / 1024 / 1024).toFixed(2);
+      const limitMB = +(jsHeapSizeLimit / 1024 / 1024).toFixed(2);
+
+      //内存泄漏
+      if (usedMB > lastUsedJSHeap) {
+        growthCount++;
+        if (growthCount >= config.leakThreshold) {
+          this.enqueue({
+            type: "performance",
+            info: {
+              subType: "memory",
+              extraDesc: "memoryLeak",
+              pageUrl: window.location.href,
+              value: usedMB,
+            },
+          });
+        }
+      } else {
+        growthCount = 0;
+      }
+
+      //内存使用超过绝对阈值
+      if (usedMB > config.maxUsageAlert) {
+        this.enqueue({
+          type: "performance",
+          info: {
+            subType: "memory",
+            extraDesc: "memoryOverflow",
+            pageUrl: window.location.href,
+            maxUsageAlert: config.maxUsageAlert,
+            value: usedMB,
+          },
+        });
+      }
+      lastUsedJSHeap = usedMB;
+
+      let lastRun = 0;
+      function checkWithRAF() {
+        const now = Date.now();
+        if (now - lastRun >= config.samplingInterval) {
+          checkMemory();
+          lastRun = now;
+        }
+        requestAnimationFrame(checkWithRAF);
+      }
+
+      if ("requestAnimationFrame" in window) {
+        requestAnimationFrame(checkWithRAF);
+      } else {
+        setTimeout(checkMemory, config.samplingInterval);
+      }
+    };
+  }
+  private observeWhiteScreen() {
+    // 配置参数（可提取到配置文件中）
+    const config = {
+      wrapperSelectors: ['html', 'body', '#root'], // 白屏容器元素
+      checkPoints: 18,     // 总检测点数（横9+竖9）
+      threshold: 15,       // 白屏判定阈值
+      checkDelay: 3000,    // 页面加载后开始检测的延迟
+      useIdleCallback: true// 是否使用空闲检测
+    };
+  
+    const performWhiteScreenCheck = () => {
+      let emptyPoints = 0;
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+  
+      const getCheckPoints = (total: number) =>
+        Array.from({ length: total }, (_, i) => (i + 1) / (total + 1));
+  
+      getCheckPoints(9).forEach(ratio => {
+        const element = document.elementFromPoint(viewportWidth * ratio, viewportHeight / 2);
+        if (isWrapperElement(element)) emptyPoints++;
+      });
+  
+      getCheckPoints(9).forEach(ratio => {
+        const element = document.elementFromPoint(viewportWidth / 2, viewportHeight * ratio);
+        if (isWrapperElement(element)) emptyPoints++;
+      });
+  
+      if (emptyPoints >= config.threshold) {
+        const centerElement = document.elementFromPoint(
+          viewportWidth / 2,
+          viewportHeight / 2
+        );
+        reportWhiteScreen(emptyPoints, centerElement);
+      }
+    };
+  
+    const isWrapperElement = (element: Element | null) => {
+      if (!element) return true; // 容错：无法获取元素视为白屏点
+      return config.wrapperSelectors.some(selector =>
+        element.matches(selector)
+      );
+    };
+  
+    const reportWhiteScreen = (emptyPoints: number, centerElement: Element | null) => {
+      this.enqueue({
+        type: 'performance',
+        info: {
+          subType: 'whiteScreen',
+          pageUrl: window.location.href,
+          emptyPoints,
+        }
+      });
+    }
+  
+    const checkAtIdlePeriod = () => {
+      if ('requestIdleCallback' in window) {
+        (window as any).requestIdleCallback(() => {
+          performWhiteScreenCheck();
+        }, { timeout: config.checkDelay });
+      } else {
+        setTimeout(performWhiteScreenCheck, config.checkDelay);
+      }
+    };
+    
+    if (document.readyState === 'complete') {
+      checkAtIdlePeriod();
+    } else {
+      window.addEventListener('load', checkAtIdlePeriod);
+    }
+  }
   private observeInteractionLatency() {}
 
   //======================= 自定义指标 =======================
