@@ -14,6 +14,7 @@ declare namespace Monitor {
     longTask: boolean;
     memory: boolean;
     whiteScreen: boolean;
+    pageBlock: boolean;
   }
   //这个没设计好，再看看，要反映用户的兴趣和偏好
   interface UserActionMonitorConfig {
@@ -116,11 +117,15 @@ declare namespace Monitor {
     memory: {
       extraDesc: "memoryLeak" | 'memoryOverflow'
       maxUsageAlert?: number
-      value: number;
+      usedMB: number;
+      totalMB?: number;
     };
     whiteScreen: {
       emptyPoints: number;
     };
+    pageBlock: {
+
+    }
   }
 
   export type RawMonitorMessageData = {

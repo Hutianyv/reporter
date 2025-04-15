@@ -32,6 +32,9 @@ interface EnhancedPerformance extends Performance {
   };
 }
 
+const FPS = 60; // 帧率
+const FRAME_TIME = 1000 / FPS; // 每帧所需的时间
+
 class PerformanceMontior {
   private hooks = tapable(["beforeStart", "afterStart", "onError"]);
   private config: Monitor.MonitorConfig["performance"];
@@ -55,10 +58,10 @@ class PerformanceMontior {
     try {
       //核心性能指标监控
       this.setupCoreMetrics();
-      //高级性能指标监控，需要一定的自定义
+      //高级性能指标监控
       this.setupAdvancedMonitoring();
       //完全由用户自己设计的性能指标
-      this.setupCustomMetrics();
+      // this.setupCustomMetrics();
     } catch (error) {
       //TODO: 在这里进行retry重新开启监控，其他的地方也看看加上onerror这个生命周期
     }
@@ -251,8 +254,8 @@ class PerformanceMontior {
     // 2. 白屏监控
     this.observeWhiteScreen();
 
-    // 3. 交互响应延迟
-    this.observeInteractionLatency();
+    // 3. 页面卡顿监控
+    this.observePageBlock();
   }
 
   private observeMemoryUsage() {
@@ -268,11 +271,11 @@ class PerformanceMontior {
     let growthCount = 0;
     const perf = window.performance as EnhancedPerformance;
     const checkMemory = () => {
-      const { jsHeapSizeLimit, totalJSHeapSize, usedJSHeapSize } = perf.memory!;
+      const { totalJSHeapSize, usedJSHeapSize } = perf.memory!;
 
       const usedMB = +(usedJSHeapSize / 1024 / 1024).toFixed(2);
       const totalMB = +(totalJSHeapSize / 1024 / 1024).toFixed(2);
-      const limitMB = +(jsHeapSizeLimit / 1024 / 1024).toFixed(2);
+      // const limitMB = +(jsHeapSizeLimit / 1024 / 1024).toFixed(2);
 
       //内存泄漏
       if (usedMB > lastUsedJSHeap) {
@@ -284,7 +287,7 @@ class PerformanceMontior {
               subType: "memory",
               extraDesc: "memoryLeak",
               pageUrl: window.location.href,
-              value: usedMB,
+              usedMB: usedMB,
             },
           });
         }
@@ -301,7 +304,8 @@ class PerformanceMontior {
             extraDesc: "memoryOverflow",
             pageUrl: window.location.href,
             maxUsageAlert: config.maxUsageAlert,
-            value: usedMB,
+            totalMB: totalMB,
+            usedMB: usedMB,
           },
         });
       }
@@ -353,11 +357,7 @@ class PerformanceMontior {
       });
   
       if (emptyPoints >= config.threshold) {
-        const centerElement = document.elementFromPoint(
-          viewportWidth / 2,
-          viewportHeight / 2
-        );
-        reportWhiteScreen(emptyPoints, centerElement);
+        reportWhiteScreen(emptyPoints);
       }
     };
   
@@ -368,7 +368,7 @@ class PerformanceMontior {
       );
     };
   
-    const reportWhiteScreen = (emptyPoints: number, centerElement: Element | null) => {
+    const reportWhiteScreen = (emptyPoints: number) => {
       this.enqueue({
         type: 'performance',
         info: {
@@ -388,23 +388,50 @@ class PerformanceMontior {
         setTimeout(performWhiteScreenCheck, config.checkDelay);
       }
     };
-    
+
     if (document.readyState === 'complete') {
       checkAtIdlePeriod();
     } else {
       window.addEventListener('load', checkAtIdlePeriod);
     }
   }
-  private observeInteractionLatency() {}
+  private observePageBlock() {
+    if (!('requestAnimationFrame' in window)) return;
+    const CHECK_COUNT = 2 //TODO: 应来自配置项
+    const BLOCK_TIME = 100
+
+    let unmetCount = 0; // 不满足阈值的次数
+    let lastFrameTime = 0;
+
+    const checkFrame = (currentFrameTime: DOMHighResTimeStamp) => {
+      if (currentFrameTime - lastFrameTime >= BLOCK_TIME) {
+        unmetCount++;
+        if (unmetCount >= CHECK_COUNT) {
+          this.enqueue({
+            type: "performance",
+            info: {
+              subType: "pageBlock",
+              pageUrl: window.location.href,
+            },
+          });
+        }
+      } else {
+        unmetCount = 0;
+      }
+      lastFrameTime = currentFrameTime;
+      requestAnimationFrame(checkFrame);
+    };
+    requestAnimationFrame(checkFrame);
+  }
 
   //======================= 自定义指标 =======================
-  private setupCustomMetrics() {
-    // 业务自定义指标示例
-    performance.mark("custom-metric-start");
-    window.addEventListener("custom-event", () => {
-      performance.measure("custom-metric", "custom-metric-start");
-    });
-  }
+  // private setupCustomMetrics() {
+  //   // 业务自定义指标示例
+  //   performance.mark("custom-metric-start");
+  //   window.addEventListener("custom-event", () => {
+  //     performance.measure("custom-metric", "custom-metric-start");
+  //   });
+  // }
 
   //======================= 工具方法 =======================
   private createObserver(
