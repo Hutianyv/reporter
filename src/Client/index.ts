@@ -1,4 +1,4 @@
-import { WorkLoopQueue } from "@/utils/workLoopQueue";
+import { RxQueue } from "@/utils/rxWorkLoopQueue";
 import ConfigManager from "@/ConfigManager";
 import MainMonitor from "@/Monitor";
 import Builder from "@/Builder";
@@ -14,62 +14,69 @@ import { NormalIdPlugin } from "@/Plugins/NormalIdPlugin";
 
 export const createClient = (config: any) => {
   let inited = false;
-  let canStart = false;
-  let preStartQueue = new WorkLoopQueue<Monitor.RawMonitorMessageData>(
-    processQueueItem
-  );
+  let isStart = false;
+  let preStartQueue = new RxQueue<Monitor.RawMonitorMessageData>({
+    maxBatch: 15,
+    timeout: 2000,
+    retries: 3,
+  });
   let configManager: ConfigManager;
   let monitor: MainMonitor;
   let builder: Builder;
   let sender: Sender;
 
-  const normalPlugin: Plugin[] = [NormalLoggerPlugin, NormalLocaltimePlugin, NormalUserAgentPlugin, NormalIdPlugin];
+  const normalPlugin: Plugin[] = [
+    NormalLoggerPlugin,
+    NormalLocaltimePlugin,
+    NormalUserAgentPlugin,
+    NormalIdPlugin,
+  ];
 
   const client = {
     init: (config: any) => {
       configManager = new ConfigManager(config);
       configManager.onReady(() => {
+        //初始化全局监控
+        monitor = new MainMonitor(configManager);
         builder = new Builder(configManager);
         sender = new Sender(configManager);
-        //初始化全局监控
-        monitor = new MainMonitor(configManager, preStartQueue.enqueue);
         //应用所有插件
         applyPlugin(normalPlugin, config.plugin);
-        canStart = true;
+        isStart = true;
       });
       inited = true;
     },
 
-    start: () => { 
-      if (!canStart) return;
+    start: () => {
+      if (!inited || isStart) return;
       monitor.start();
-      handleReport({
-        type: "pageView",
-        info: {
-          subType: "pv",
-          url: window.location.href,
-        },
-      });
+      //将数据流串连起来
+      concatStream();
+      isStart = true;
     },
 
     report: (rawMonitorMessageData: Monitor.RawMonitorMessageData) => {
-      if (!canStart) {
-        preStartQueue.enqueue(rawMonitorMessageData);
-      } else {
-        handleReport(rawMonitorMessageData);
-      }
+      if (!isStart) return;
+      preStartQueue.enqueue(rawMonitorMessageData);
     },
   };
 
-  function processQueueItem(rawMonitorMessageData: Monitor.RawMonitorMessageData) {
-    handleReport(rawMonitorMessageData);
-  }
-
-  function handleReport(rawMonitorMessageData: Monitor.RawMonitorMessageData) {
-    if (rawMonitorMessageData) {
-      const buildData = builder.build(rawMonitorMessageData);
-      buildData && sender.send(buildData);
-    }
+  function concatStream() {
+    monitor.mainStream$.subscribe({
+      next: (data) => {
+        if (!isStart) return;
+        preStartQueue.enqueue(data);
+      },
+      error: (e) => console.error("Monitor stream error:", e),
+    });
+    preStartQueue.output$.subscribe({
+      next: (data) => builder.toBuild(data),
+      error: (e) => console.error("Build stream error:", e),
+    });
+    builder.output$.subscribe({
+      next: (data) => sender.send(data),
+      error: (e) => console.error("Send stream error:", e),
+    });
   }
 
   function applyPlugin(normalPlugin: Plugin[], customPlugin: Plugin[]) {

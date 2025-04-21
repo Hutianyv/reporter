@@ -13,8 +13,10 @@
     "typescript": "^5.8.2"
   },
   "dependencies": {
+    "dexie": "^4.0.11",
     "mitt": "^3.0.1",
     "nanoid": "^5.1.5",
+    "rxjs": "^7.8.2",
     "ua-parser-js": "^2.0.3"
   }
 }

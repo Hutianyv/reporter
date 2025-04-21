@@ -3,32 +3,26 @@
  */
 
 import { tapable } from "@/utils/tapable";
+import { Subject } from "rxjs";
 
 class UserDataMontior {
      private hooks = tapable(['beforeInit', 'beforeStart', "beforeVia"])
-        private config: Monitor.MonitorConfig["userData"];
-        private enqueue: (data: Monitor.RawMonitorMessageData) => void;
-        constructor(errorMonitorConfig: Monitor.MonitorConfig["userData"], enqueue: (data: Monitor.RawMonitorMessageData) => void) {
+    private config: Monitor.MonitorConfig["userData"];
+     public readonly stream$ = new Subject<Monitor.RawMonitorMessageData>();
+        constructor(errorMonitorConfig: Monitor.MonitorConfig["userData"]) {
             this.config = errorMonitorConfig
-            this.enqueue = enqueue
             this.hooks.beforeInit.callSync()
-            this.init()
+            
         }
-        init() {
-            //初始化
-            window.addEventListener('error', (e) => {
-                console.log(e)
-            })
-        }
-        via2Builder(message: string) {
-            //将错误信息传递给builder
-            console.log('via2Report')
-        }
+      
         start() { 
             this.hooks.beforeStart.callSync()
             //开始监控
             console.log('start')
         }
+        stop() {
+            //停止监控
+          }
 }
 
 export default UserDataMontior

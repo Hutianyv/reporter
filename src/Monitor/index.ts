@@ -9,81 +9,137 @@
  */
 
 import { tapable } from "@/utils/tapable";
+import {
+  Subject,
+  merge,
+  mergeMap,
+  catchError,
+  bufferTime,
+  Subscription,
+  Observable,
+  EMPTY,
+} from "rxjs";
 import ConfigManager from "@/ConfigManager";
-import ErrorMontior from "./errorMonitor";
+import ErrorMonitor from "./errorMonitor";
 import PerformanceMonitor from "./performanceMonitor";
 import PageViewMonitor from "./pageViewMonitor";
 import UserActionMonitor from "./userActionMonitor";
 import UserDataMonitor from "./userDataMonitor";
 
+abstract class BaseMonitor {
+  abstract stream$: Subject<Monitor.RawMonitorMessageData>;
+  abstract start(): void;
+  abstract stop(): void;
+}
+
+const MONITOR_REGISTRY: Record<
+  keyof Monitor.MonitorConfig,
+  new (config: any) => BaseMonitor
+> = {
+  error: ErrorMonitor,
+  performance: PerformanceMonitor,
+  pageView: PageViewMonitor,
+  userAction: UserActionMonitor,
+  userData: UserDataMonitor,
+};
+export interface MonitorStreamConfig {
+  concurrency?: number; // 最大并发数
+  enableLog?: boolean; // 启用日志
+  bufferTime?: number; // 背压缓冲时间(ms)
+}
+const DEFAULT_CONFIG: Required<MonitorStreamConfig> = {
+  concurrency: 3,
+  enableLog: true,
+  bufferTime: 500,
+};
 class MainMonitor {
+  private isStarted = false;
   private config: Monitor.MonitorConfig;
   private hooks = tapable(["beforeInit", "beforeStart", "beforeStop"]);
-  private enqueue: (data: Monitor.RawMonitorMessageData) => void;
-  private errorMontior?: ErrorMontior;
-  private performanceMonitor?: PerformanceMonitor;
-  private pageViewMonitor?: PageViewMonitor;
-  private userActionMonitor?: UserActionMonitor;
-  private userDataMonitor?: UserDataMonitor;
-  constructor(
-    configManager: ConfigManager,
-    enqueue: (data: Monitor.RawMonitorMessageData) => void
-  ) {
+  private monitors: Partial<
+    Record<keyof Monitor.MonitorConfig, Monitor.MonitorInstance>
+  > = {};
+  private MainPipeline$ = new Subject();
+  private RawMonitorMessageStream$ =
+    new Subject<Monitor.RawMonitorMessageData>();
+  private subscriptions = new Subscription();
+  public readonly mainStream$ = this.RawMonitorMessageStream$.asObservable();
+  constructor(configManager: ConfigManager) {
     this.config = configManager.getMonitorConfig();
-    this.enqueue = enqueue;
     this.hooks.beforeInit.callSync();
-    this.init(this.config);
+
+    this.initializeMonitors();
   }
 
-  init(config: Monitor.MonitorConfig) {
-    // 初始化各种监控类
-    const shouldInitErrorMonitor = Boolean(config.error.url);
-    const shouldInitPerformanceMonitor = Boolean(config.performance.url);
-    const shouldInitUserActionMonitor = Boolean(config.userAction.url);
-    const shouldInitUserDataMonitor = Boolean(config.userData.url);
-    const shouldInitPageViewMonitor = Boolean(config.pageView.url);
+  private initializeMonitors() {
+    const childStreams: Observable<Monitor.RawMonitorMessageData>[] = [];
 
-    if (shouldInitErrorMonitor) {
-      // 初始化错误监控
-      this.errorMontior = new ErrorMontior(config.error, this.enqueue);
-    }
-    if (shouldInitPerformanceMonitor) {
-      // 初始化性能监控
-      this.performanceMonitor = new PerformanceMonitor(
-        config.performance,
-        this.enqueue
-      );
-    }
-    if (shouldInitUserActionMonitor) {
-      // 初始化用户行为监控
-      this.userActionMonitor = new UserActionMonitor(
-        config.userAction,
-        this.enqueue
-      );
-    }
-    if (shouldInitUserDataMonitor) {
-      // 初始化用户数据监控
-      this.userDataMonitor = new UserDataMonitor(config.userData, this.enqueue);
-    }
-    if (shouldInitPageViewMonitor) {
-      // 初始化页面浏览监控
-      this.pageViewMonitor = new PageViewMonitor(config.pageView, this.enqueue);
-    }
+    (
+      Object.entries(MONITOR_REGISTRY) as Array<
+        [keyof Monitor.MonitorConfig, new (config: any) => BaseMonitor]
+      >
+    ).forEach(([type, MonitorClass]) => {
+      const config = this.config[type];
+      if (config?.enabled && config?.endpoint) {
+        const monitor = new MonitorClass(config);
+        this.monitors[type] = monitor;
+
+        childStreams.push(monitor.stream$);
+      }
+    });
+
+    this.subscriptions.add(
+      merge(...childStreams).subscribe(this.RawMonitorMessageStream$)
+    );
+  }
+
+  private setupDataPipeline(config: MonitorStreamConfig = DEFAULT_CONFIG) {
+    const mergedConfig = { ...DEFAULT_CONFIG, ...config };
+
+    this.subscriptions.add(
+      this.mainStream$
+        .pipe(
+          bufferTime(mergedConfig.bufferTime),
+          mergeMap((buffer) => buffer, mergedConfig.concurrency),
+          catchError((error) => {
+            console.error("[Monitor] Pipeline error:", error);
+            return EMPTY;
+          })
+        )
+        .subscribe()
+    );
   }
 
   start() {
+    if (this.isStarted) return;
     this.hooks.beforeStart.callSync();
     // 开始监控
-    this.errorMontior?.start();
-    this.performanceMonitor?.start();
-    this.userActionMonitor?.start();
-    this.userDataMonitor?.start();
-    this.pageViewMonitor?.start();
+    try {
+      Object.values(this.monitors).forEach((monitor) => {
+        monitor?.start();
+      });
+
+      this.setupDataPipeline();
+      this.isStarted = true;
+    } catch (err) {
+      console.log(err);
+    }
   }
 
   stop() {
     this.hooks.beforeStop.callSync();
     // 停止监控
+    try {
+      Object.values(this.monitors).forEach((monitor) => {
+        monitor?.stop();
+      });
+    } catch (err) {
+      console.log(err);
+      this.MainPipeline$?.unsubscribe();
+      this.subscriptions.unsubscribe();
+      this.subscriptions = new Subscription();
+      this.isStarted = false;
+    }
   }
 }
 

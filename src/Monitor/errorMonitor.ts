@@ -5,10 +5,11 @@
  */
 
 import { tapable } from "@/utils/tapable";
+import { Subject } from "rxjs";
 class ErrorMontior {
   private hooks = tapable(["beforeStart"]);
   private config: Monitor.MonitorConfig["error"];
-  private enqueue: (data: Monitor.RawMonitorMessageData) => void;
+  public readonly stream$ = new Subject<Monitor.RawMonitorMessageData>();
 
   //保留原始XMLHttpRequest的引用，用于劫持XHR
   private originalXHR: typeof XMLHttpRequest;
@@ -16,10 +17,8 @@ class ErrorMontior {
   private originalFetch: typeof fetch;
   constructor(
     errorMonitorConfig: Monitor.MonitorConfig["error"],
-    enqueue: (data: Monitor.RawMonitorMessageData) => void
   ) {
     this.config = errorMonitorConfig;
-    this.enqueue = enqueue;
     this.originalXHR = window.XMLHttpRequest;
     this.originalFetch = window.fetch;
 
@@ -41,6 +40,17 @@ class ErrorMontior {
       this.hijackXHR();
       this.hijackFetch();
     }
+    //用户自定义错误监控
+    //@ts-ignore
+    // if (this.config.customErrorMonitor) { 
+    //   //@ts-ignore
+    //   this.config.custom.forEach((item) => {
+    //     item.listen(this.enqueue);
+    //   });
+    // }
+  }
+  stop() {
+    //停止监控
   }
 
   //------------------------ 运行时错误监控 ------------------------
@@ -48,7 +58,7 @@ class ErrorMontior {
     window.addEventListener("error", (event) => {
       //这里进行判断，如果是window下的错误，那么其实就是运行时的js错误，这里进行jserror的上报
       if (event.target !== window) return;
-      this.enqueue({
+      this.stream$.next({
         type: "error",
         info: {
           subType: "jsError",
@@ -77,7 +87,7 @@ class ErrorMontior {
           target.tagName === "LINK";
 
         if (isResourceError) {
-          this.enqueue({
+          this.stream$.next({
             type: "error",
             info: {
               subType: "assetsError",
@@ -99,7 +109,7 @@ class ErrorMontior {
   //------------------------ Promise 未处理错误监控 ------------------------
   private listenPromiseError() {
     window.addEventListener("unhandledrejection", (event) => {
-      this.enqueue({
+      this.stream$.next({
         type: "error",
         info: {
           subType: "unhandledrejectionError",
@@ -130,7 +140,7 @@ class ErrorMontior {
       send(data?: any) {
         this.addEventListener("readystatechange", () => {
           if (this.readyState === 4 && this.status >= 400) {
-            self.enqueue({
+            self.stream$.next({
               type: "error",
               info: {
                 subType: "ajaxError",
@@ -160,7 +170,7 @@ class ErrorMontior {
 
       if (!response.ok) {
         const costTime = Date.now() - startTime;
-        self.enqueue({
+        self.stream$.next({
           type: "error",
           info: {
             subType: "ajaxError",

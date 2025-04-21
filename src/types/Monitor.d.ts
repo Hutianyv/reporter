@@ -58,8 +58,6 @@ declare namespace Monitor {
   };
 
   interface SubTypeExtraInfoMap {
-    pv: { url: string };
-    uv: { url: string };
     jsError: {
       errorMsg: string;
       line: number;
@@ -127,6 +125,10 @@ declare namespace Monitor {
 
     }
   }
+  export interface MonitorInstance{
+    start: () => void;
+    stop: () => void;
+  };
 
   export type RawMonitorMessageData = {
     [K in keyof SubTypeMap]: SubTypeMap[K] extends infer S

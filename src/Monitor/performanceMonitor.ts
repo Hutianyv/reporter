@@ -3,6 +3,7 @@
  */
 
 import { tapable } from "@/utils/tapable";
+import { Subject } from "rxjs";
 
 interface LayoutShift extends PerformanceEntry {
   value: number;
@@ -38,17 +39,15 @@ const FRAME_TIME = 1000 / FPS; // 每帧所需的时间
 class PerformanceMontior {
   private hooks = tapable(["beforeStart", "afterStart", "onError"]);
   private config: Monitor.MonitorConfig["performance"];
-  private enqueue: (data: Monitor.RawMonitorMessageData) => void;
+   public readonly stream$ = new Subject<Monitor.RawMonitorMessageData>();
   private observers: PerformanceObserver[] = [];
   private longTaskThreshold = 50; //这个长任务阈值给个50ms，先这样吧，但是怀疑现在代码里肯定一堆大于50ms的任务hhh
   private readonly MAX_SAMPLE_RATE = 0.1; //10%采样率
 
   constructor(
     errorMonitorConfig: Monitor.MonitorConfig["performance"],
-    enqueue: (data: Monitor.RawMonitorMessageData) => void
   ) {
     this.config = errorMonitorConfig;
-    this.enqueue = enqueue;
     this.hooks.beforeInit.callSync();
     this.start();
   }
@@ -62,11 +61,21 @@ class PerformanceMontior {
       this.setupAdvancedMonitoring();
       //完全由用户自己设计的性能指标
       // this.setupCustomMetrics();
+    //@ts-ignore
+    // if (this.config.customPerformanceMonitor) { 
+    //   //@ts-ignore
+    //   this.config.custom.forEach((item) => {
+    //     item.listen(this.enqueue);
+    //   });
+    // }
     } catch (error) {
       //TODO: 在这里进行retry重新开启监控，其他的地方也看看加上onerror这个生命周期
     }
 
     this.hooks.afterStart.callSync();
+  }
+  stop() {
+    //停止监控
   }
 
   //======================= 核心性能指标 =======================
@@ -111,7 +120,7 @@ class PerformanceMontior {
         decodedBodySize: entry.decodedBodySize,
       };
 
-      this.enqueue({
+      this.stream$.next({
         type: "performance",
         info: {
           subType: "navigation",
@@ -136,7 +145,7 @@ class PerformanceMontior {
     );
 
     if (fcpEntry) {
-      this.enqueue({
+      this.stream$.next({
         type: "performance",
         info: {
           subType: "paint",
@@ -149,7 +158,7 @@ class PerformanceMontior {
     //LCP监控
     this.createObserver("largest-contentful-paint", (entries) => {
       const lastEntry = entries[entries.length - 1] as LargestContentfulPaint;
-      this.enqueue({
+      this.stream$.next({
         type: "performance",
         info: {
           subType: "paint",
@@ -187,7 +196,7 @@ class PerformanceMontior {
         individualShifts.length > 0 &&
         currentTime - lastCLSReportTime >= REPORT_INTERVAL
       ) {
-        this.enqueue({
+        this.stream$.next({
           type: "performance",
           info: {
             subType: "paint",
@@ -207,7 +216,7 @@ class PerformanceMontior {
         if (Math.random() > this.MAX_SAMPLE_RATE) return;
 
         const resourceEntry = entry as PerformanceResourceTiming;
-        this.enqueue({
+        this.stream$.next({
           type: "performance",
           info: {
             subType: "resource",
@@ -228,7 +237,7 @@ class PerformanceMontior {
       entries.forEach((entry) => {
         const longTaskEntry = entry as PerformanceLongTaskTiming;
         if (longTaskEntry.duration > this.longTaskThreshold) {
-          this.enqueue({
+          this.stream$.next({
             type: "performance",
             info: {
               subType: "longTask",
@@ -281,7 +290,7 @@ class PerformanceMontior {
       if (usedMB > lastUsedJSHeap) {
         growthCount++;
         if (growthCount >= config.leakThreshold) {
-          this.enqueue({
+          this.stream$.next({
             type: "performance",
             info: {
               subType: "memory",
@@ -297,7 +306,7 @@ class PerformanceMontior {
 
       //内存使用超过绝对阈值
       if (usedMB > config.maxUsageAlert) {
-        this.enqueue({
+        this.stream$.next({
           type: "performance",
           info: {
             subType: "memory",
@@ -369,7 +378,7 @@ class PerformanceMontior {
     };
   
     const reportWhiteScreen = (emptyPoints: number) => {
-      this.enqueue({
+      this.stream$.next({
         type: 'performance',
         info: {
           subType: 'whiteScreen',
@@ -407,7 +416,7 @@ class PerformanceMontior {
       if (currentFrameTime - lastFrameTime >= BLOCK_TIME) {
         unmetCount++;
         if (unmetCount >= CHECK_COUNT) {
-          this.enqueue({
+          this.stream$.next({
             type: "performance",
             info: {
               subType: "pageBlock",
