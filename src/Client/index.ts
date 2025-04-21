@@ -3,16 +3,17 @@ import ConfigManager from "@/ConfigManager";
 import MainMonitor from "@/Monitor";
 import Builder from "@/Builder";
 import Sender from "@/Sender";
-import { Plugin } from "@/types/Client";
+import { Plugin, pluginName } from "@/types/Client";
 import { NormalLoggerPlugin } from "@/Plugins/NormalLoggerPlugin";
 import { NormalLocaltimePlugin } from "@/Plugins/NormalLocaltimePlugin";
 import { NormalUserAgentPlugin } from "@/Plugins/NormalUserAgentPlugin";
 import { NormalIdPlugin } from "@/Plugins/NormalIdPlugin";
+import { RiverConfig } from "@/types/index";
 /**
  * 实例主体，负责串联配置管理器、收集器、组装器和发送器，串通整个流程，同时提供生命周期监听以供扩展 SDK 功能。
  */
 
-export const createClient = (config: any) => {
+export const createClient = (config: RiverConfig) => {
   let inited = false;
   let isStart = false;
   let preStartQueue = new RxQueue<Monitor.RawMonitorMessageData>({
@@ -33,7 +34,7 @@ export const createClient = (config: any) => {
   ];
 
   const client = {
-    init: (config: any) => {
+    init: () => {
       configManager = new ConfigManager(config);
       configManager.onReady(() => {
         //初始化全局监控
@@ -41,7 +42,7 @@ export const createClient = (config: any) => {
         builder = new Builder(configManager);
         sender = new Sender(configManager);
         //应用所有插件
-        applyPlugin(normalPlugin, config.plugin);
+        applyPlugin(normalPlugin, config.plugins);
         isStart = true;
       });
       inited = true;
@@ -81,28 +82,32 @@ export const createClient = (config: any) => {
 
   function applyPlugin(normalPlugin: Plugin[], customPlugin: Plugin[]) {
     //挂载插件系统
-    const PluginType2Instance = {
-      configManager: configManager,
-      monitor: monitor,
-      builder: builder,
-      sender: sender,
+    const PluginType2Instance: { [K in pluginName]: any } = {
+      "configManager": configManager,
+      "monitor": monitor,
+      "builder": builder,
+      "sender": sender,
     };
 
+    function getInstance(type: pluginName) { 
+      return PluginType2Instance[type];
+    }
+
     //处理内置NormalPlugin
-    normalPlugin.forEach((plugin) => {
+    normalPlugin.forEach(async (plugin) => {
       if (typeof plugin === "function") {
-        plugin(PluginType2Instance[plugin.type]);
+        await plugin(getInstance(plugin.type));
       } else {
-        plugin.apply(PluginType2Instance[plugin.type]);
+        plugin.apply(getInstance(plugin.type));
       }
     });
     //这里可以给用户传入的plugin进行一些处理
     if (Array.isArray(customPlugin)) {
       customPlugin.forEach((plugin) => {
         if (typeof plugin === "function") {
-          plugin(PluginType2Instance[plugin.type]);
+          plugin(getInstance(plugin.type));
         } else {
-          plugin.apply(PluginType2Instance[plugin.type]);
+          plugin.apply(getInstance(plugin.type));
         }
       });
     } else {

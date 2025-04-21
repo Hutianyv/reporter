@@ -15,9 +15,7 @@ class ErrorMontior {
   private originalXHR: typeof XMLHttpRequest;
   //保留原始fetch的引用，用于劫持fetch
   private originalFetch: typeof fetch;
-  constructor(
-    errorMonitorConfig: Monitor.MonitorConfig["error"],
-  ) {
+  constructor(errorMonitorConfig: Monitor.MonitorConfig["error"]) {
     this.config = errorMonitorConfig;
     this.originalXHR = window.XMLHttpRequest;
     this.originalFetch = window.fetch;
@@ -27,27 +25,19 @@ class ErrorMontior {
   start() {
     this.hooks.beforeStart.callSync();
     //开始监控
-    if (this.config.jsError) {
-      this.listenRuntimeError();
+    this.listenRuntimeError();
+    this.listenResourceError();
+    this.listenPromiseError();
+    this.hijackXHR();
+    this.hijackFetch();
+    
+    //自定义错误上报
+    if (this.config.customErrorMonitor.length > 0) {
+      this.config.customErrorMonitor.forEach((item) => {
+        item(this.stream$);
+      });
     }
-    if (this.config.assetsError) {
-      this.listenResourceError();
-    }
-    if (this.config.unhandledrejectionError) {
-      this.listenPromiseError();
-    }
-    if (this.config.ajaxError) {
-      this.hijackXHR();
-      this.hijackFetch();
-    }
-    //用户自定义错误监控
-    //@ts-ignore
-    // if (this.config.customErrorMonitor) { 
-    //   //@ts-ignore
-    //   this.config.custom.forEach((item) => {
-    //     item.listen(this.enqueue);
-    //   });
-    // }
+
   }
   stop() {
     //停止监控

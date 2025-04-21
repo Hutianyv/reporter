@@ -23,8 +23,6 @@ import ConfigManager from "@/ConfigManager";
 import ErrorMonitor from "./errorMonitor";
 import PerformanceMonitor from "./performanceMonitor";
 import PageViewMonitor from "./pageViewMonitor";
-import UserActionMonitor from "./userActionMonitor";
-import UserDataMonitor from "./userDataMonitor";
 
 abstract class BaseMonitor {
   abstract stream$: Subject<Monitor.RawMonitorMessageData>;
@@ -38,9 +36,9 @@ const MONITOR_REGISTRY: Record<
 > = {
   error: ErrorMonitor,
   performance: PerformanceMonitor,
-  pageView: PageViewMonitor,
+  //@ts-ignore
   userAction: UserActionMonitor,
-  userData: UserDataMonitor,
+  pageView: PageViewMonitor,
 };
 export interface MonitorStreamConfig {
   concurrency?: number; // 最大并发数
@@ -80,7 +78,7 @@ class MainMonitor {
       >
     ).forEach(([type, MonitorClass]) => {
       const config = this.config[type];
-      if (config?.enabled && config?.endpoint) {
+      if (config.enable) {
         const monitor = new MonitorClass(config);
         this.monitors[type] = monitor;
 

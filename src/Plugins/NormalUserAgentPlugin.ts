@@ -4,7 +4,8 @@
  */
 import UAParser from 'ua-parser-js'
 import Builder from '@/Builder';
-import { pluginName, ReporterMessage } from "@/types";
+import { ReporterMessage } from "@/types";
+import { pluginName } from '@/types/Client';
 export function NormalUserAgentPlugin(Builder: Builder) {
   const ua = new UAParser.UAParser().getResult();
   Builder.hooks.beforeBuild.tapSync((RawMonitorMessageData: ReporterMessage) => {

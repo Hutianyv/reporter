@@ -2,18 +2,28 @@
  * 
  * @param Builder 构建器
  */
-import { pluginName, ReporterMessage } from "@/types";
+import { ReporterMessage } from "@/types";
+import { pluginName } from '@/types/Client';
 import Builder from "@/Builder";
+import FingerprintJS from '@fingerprintjs/fingerprintjs';
 import { nanoid } from 'nanoid'
-export function NormalIdPlugin(Builder: Builder) {
+
+async function getFingerprint(): Promise<string> {
+  const fp = await FingerprintJS.load();
+  const result = await fp.get();
+  const visitorId = result.visitorId;
+ 
+  return visitorId
+}
+export async function NormalIdPlugin(Builder: Builder) {
     //长期的userId
-    let userId = localStorage.getItem('userId')
+    let userId = localStorage.getItem('river-userId')
     if (!userId) { 
-        userId = nanoid(10)
+        userId = await getFingerprint()
         localStorage.setItem('userId', userId)
     }
     //每次页面访问的traceId
-    let traceId = sessionStorage.getItem('traceId')
+    let traceId = sessionStorage.getItem('river-traceId')
     if (!traceId) { 
         traceId = nanoid(10)
         sessionStorage.setItem('traceId', traceId)

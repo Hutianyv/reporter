@@ -33,9 +33,6 @@ interface EnhancedPerformance extends Performance {
   };
 }
 
-const FPS = 60; // 帧率
-const FRAME_TIME = 1000 / FPS; // 每帧所需的时间
-
 class PerformanceMontior {
   private hooks = tapable(["beforeStart", "afterStart", "onError"]);
   private config: Monitor.MonitorConfig["performance"];
@@ -59,15 +56,12 @@ class PerformanceMontior {
       this.setupCoreMetrics();
       //高级性能指标监控
       this.setupAdvancedMonitoring();
-      //完全由用户自己设计的性能指标
-      // this.setupCustomMetrics();
-    //@ts-ignore
-    // if (this.config.customPerformanceMonitor) { 
-    //   //@ts-ignore
-    //   this.config.custom.forEach((item) => {
-    //     item.listen(this.enqueue);
-    //   });
-    // }
+      //自定义性能指标监控
+    if (this.config.customPerformanceMonitor.length > 0) { 
+      this.config.customPerformanceMonitor.forEach((item) => {
+        item(this.stream$);
+      });
+    }
     } catch (error) {
       //TODO: 在这里进行retry重新开启监控，其他的地方也看看加上onerror这个生命周期
     }
@@ -81,24 +75,16 @@ class PerformanceMontior {
   //======================= 核心性能指标 =======================
   private setupCoreMetrics() {
     //导航计时（类似dns解析事件，网络传输时间，dom解析完成时间等等）
-    if (this.config.navigation) {
       this.observeNavigationTiming();
-    }
 
     //绘制指标 (FP/FCP/LCP/CLS，常见的web vitals)
-    if (this.config.paint) {
       this.observePaintMetrics();
-    }
 
     //资源加载性能
-    if (this.config.resource) {
       this.observeResourceLoading();
-    }
 
     //长任务监控
-    if (this.config.longTask) {
       this.observeLongTasks();
-    }
   }
 
   //具体方法实现
@@ -270,12 +256,6 @@ class PerformanceMontior {
   private observeMemoryUsage() {
     if (!("memory" in performance)) return;
 
-    const config = {
-      samplingInterval: 5000, //每5秒采样一次
-      leakThreshold: 3, //连续增长超过3次告警
-      maxUsageAlert: 1024, //内存超过1GB告警（单位MB）
-    };
-
     let lastUsedJSHeap = 0;
     let growthCount = 0;
     const perf = window.performance as EnhancedPerformance;
@@ -284,12 +264,11 @@ class PerformanceMontior {
 
       const usedMB = +(usedJSHeapSize / 1024 / 1024).toFixed(2);
       const totalMB = +(totalJSHeapSize / 1024 / 1024).toFixed(2);
-      // const limitMB = +(jsHeapSizeLimit / 1024 / 1024).toFixed(2);
 
       //内存泄漏
       if (usedMB > lastUsedJSHeap) {
         growthCount++;
-        if (growthCount >= config.leakThreshold) {
+        if (growthCount >= this.config.memory.leakThreshold) {
           this.stream$.next({
             type: "performance",
             info: {
@@ -305,14 +284,14 @@ class PerformanceMontior {
       }
 
       //内存使用超过绝对阈值
-      if (usedMB > config.maxUsageAlert) {
+      if (usedMB > this.config.memory.maxUsageAlert) {
         this.stream$.next({
           type: "performance",
           info: {
             subType: "memory",
             extraDesc: "memoryOverflow",
             pageUrl: window.location.href,
-            maxUsageAlert: config.maxUsageAlert,
+            maxUsageAlert: this.config.memory.maxUsageAlert,
             totalMB: totalMB,
             usedMB: usedMB,
           },
@@ -321,9 +300,9 @@ class PerformanceMontior {
       lastUsedJSHeap = usedMB;
 
       let lastRun = 0;
-      function checkWithRAF() {
+      const checkWithRAF = () =>{
         const now = Date.now();
-        if (now - lastRun >= config.samplingInterval) {
+        if (now - lastRun >= this.config.memory.samplingInterval) {
           checkMemory();
           lastRun = now;
         }
@@ -333,20 +312,11 @@ class PerformanceMontior {
       if ("requestAnimationFrame" in window) {
         requestAnimationFrame(checkWithRAF);
       } else {
-        setTimeout(checkMemory, config.samplingInterval);
+        setTimeout(checkMemory, this.config.memory.samplingInterval);
       }
     };
   }
   private observeWhiteScreen() {
-    // 配置参数（可提取到配置文件中）
-    const config = {
-      wrapperSelectors: ['html', 'body', '#root'], // 白屏容器元素
-      checkPoints: 18,     // 总检测点数（横9+竖9）
-      threshold: 15,       // 白屏判定阈值
-      checkDelay: 3000,    // 页面加载后开始检测的延迟
-      useIdleCallback: true// 是否使用空闲检测
-    };
-  
     const performWhiteScreenCheck = () => {
       let emptyPoints = 0;
       const viewportWidth = window.innerWidth;
@@ -365,14 +335,14 @@ class PerformanceMontior {
         if (isWrapperElement(element)) emptyPoints++;
       });
   
-      if (emptyPoints >= config.threshold) {
+      if (emptyPoints >= this.config.whiteScreen.threshold) {
         reportWhiteScreen(emptyPoints);
       }
     };
   
     const isWrapperElement = (element: Element | null) => {
       if (!element) return true; // 容错：无法获取元素视为白屏点
-      return config.wrapperSelectors.some(selector =>
+      return this.config.whiteScreen.wrapperSelectors.some(selector =>
         element.matches(selector)
       );
     };
@@ -392,9 +362,9 @@ class PerformanceMontior {
       if ('requestIdleCallback' in window) {
         (window as any).requestIdleCallback(() => {
           performWhiteScreenCheck();
-        }, { timeout: config.checkDelay });
+        }, { timeout: this.config.whiteScreen.checkDelay });
       } else {
-        setTimeout(performWhiteScreenCheck, config.checkDelay);
+        setTimeout(performWhiteScreenCheck, this.config.whiteScreen.checkDelay);
       }
     };
 

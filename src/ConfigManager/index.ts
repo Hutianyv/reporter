@@ -4,14 +4,15 @@
 */
 import { tapable } from "@/utils/tapable";
 import { baseConfig } from "./baseConfig";
+import { RiverConfig } from "@/types";
 
 class ConfigManager {
     private tapableHooks = ['init', 'beforeApplyDefaultConfig', 'beforeApplyPlugin','beforeReady']
 
     private hooks = tapable(this.tapableHooks);
-    private config: Partial<any> = {}
+    private config: Partial<RiverConfig> = {}
     private ready = false
-    constructor(config: Partial<any>) {
+    constructor(config: Partial<RiverConfig>) {
         this.config = config
        this.initTapDefaultHooks()
         //触发ConfigManager的整个初始化流程
@@ -21,6 +22,7 @@ class ConfigManager {
     //初始化整个默认hook的挂载流程
     initTapDefaultHooks = () => {
         this.hooks.init.tapSync(() => {
+            //@ts-ignore
             this.applyBasedDefaultConfig(baseConfig, this.config)
             this.hooks.beforeReady.callSync()
         })
@@ -31,15 +33,16 @@ class ConfigManager {
     }
 
 
-    applyBasedDefaultConfig = (baseConfig: any,customConfig: any) => {
+    applyBasedDefaultConfig = (baseConfig: RiverConfig, customConfig: RiverConfig) => {
         //这里将默认配置合并到config中，
         //比如jserror的各种配置没给，那我给他变成正常的格式，给他默认值
-        function mergeConfig(defaultConfig: any, customConfig: any) {
+        function mergeConfig(defaultConfig: RiverConfig, customConfig: RiverConfig) {
             for (let key in defaultConfig) {
-                if (customConfig[key] === undefined) {
-                    customConfig[key] = defaultConfig[key]
-                } else if (typeof customConfig[key] === 'object') {
-                    mergeConfig(defaultConfig[key], customConfig[key])
+                let typedKey = key as keyof RiverConfig
+                if (customConfig[typedKey] === undefined) {
+                    customConfig[typedKey] = defaultConfig[typedKey]
+                } else if (typeof customConfig[typedKey] === 'object') {
+                    mergeConfig(defaultConfig[typedKey], customConfig[typedKey])
                 }
             }
         }
@@ -49,28 +52,23 @@ class ConfigManager {
       
     }
 
-    getMonitorConfig = () => {
+    getMonitorConfig = (): Monitor.MonitorConfig => {
         //关于Monitor的配置基本就是要对哪些数据进行监控收集
         //每个监控类型的配置可能也是个对象，里面有更详细的配置选项，比如pv，uv；jserror还是资源error
         return {
-            error: this.config.error,
-            performance: this.config.performance,
-            userAction: this.config.userAction,
-            userData: this.config.userData,
-            pageView: this.config.pageView
+            error: this.config.monitor!.error,
+            performance: this.config.monitor!.performance,
+            userAction: this.config.monitor!.userAction,
+            pageView: this.config.monitor!.pageView
         }
     }
 
-    getBuilderConfig = (): any => {
-        return {
-           
-        }
+    getBuilderConfig = (): Builder.BuilderConfig => {
+        return this.config.builder!
     }
 
-    getSenderConfig = (): any => {
-        return {
-            
-        }
+    getSenderConfig = (): Sender.SenderConfig => {
+        return this.config.sender!
     }
 
     onReady = (callback: Function) => {

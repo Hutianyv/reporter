@@ -1,5 +1,4 @@
-export type pluginName = "monitor" | "builder" | "configManager" | "sender";
-
+import { Plugin } from "./types/Plugin";
 export type ReporterMessage = Monitor.RawMonitorMessageData & {
   reportTimeStamp: number;
   userId: string;
@@ -8,4 +7,12 @@ export type ReporterMessage = Monitor.RawMonitorMessageData & {
     timeStamp: string;
     userAgent: Partial<UAParser.IResult>;
   };
+};
+
+export type RiverConfig = {
+  plugins: Plugin[];
+  monitor: Monitor.MonitorConfig;
+  builder: Builder.BuilderConfig;
+  configManager: ConfigManager.ConfigManagerConfig;
+  sender: Sender.SenderConfig;
 };
