@@ -1,10 +1,16 @@
 declare namespace Monitor {
-
   type SubTypeMap = {
-    error: 'jsError' | 'assetsError' | 'ajaxError' | 'unhandledrejectionError';
-    performance: 'paint' | 'resource' | 'longTask' | 'memory' | 'whiteScreen' | 'pageBlock' | 'navigation';
-    userAction: 'userActionSteps';
-    pageView: 'history' | 'time';
+    error: "jsError" | "assetsError" | "ajaxError" | "unhandledrejectionError";
+    performance:
+      | "paint"
+      | "resource"
+      | "longTask"
+      | "memory"
+      | "whiteScreen"
+      | "pageBlock"
+      | "navigation";
+    // userAction: 'userActionSteps';
+    pageView: "history" | "time";
   };
 
   interface SubTypeExtraInfoMap {
@@ -39,12 +45,14 @@ declare namespace Monitor {
     };
     paint: {
       extraDesc: "fcp" | "lcp" | "fid" | "cls" | "inp" | "ttfb" | "load";
-      value: number;
+      startTime?: number;
+      renderTime?: number;
+      clsValue?: number;
       element?: string;
       size?: number;
       url?: string;
       individualShifts?: {
-        value: number;
+        shiftValue: number;
         sources: string[];
         timestamp: number;
         duration: number;
@@ -58,13 +66,14 @@ declare namespace Monitor {
       encodedBodySize: number;
     };
     longTask: {
+      name: string
+      startTime: number;
       duration: number;
-      container: "object" | "window" | "iframe" | "embed";
-      context?: string;
+      attributions: Object
     };
     memory: {
-      extraDesc: "memoryLeak" | 'memoryOverflow'
-      maxUsageAlert?: number
+      extraDesc: "memoryLeak" | "memoryOverflow";
+      maxUsageAlert?: number;
       usedMB: number;
       totalMB?: number;
     };
@@ -72,13 +81,12 @@ declare namespace Monitor {
       emptyPoints: number;
     };
     pageBlock: {
-
-    }
+    };
   }
-  export interface MonitorInstance{
+  export interface MonitorInstance {
     start: () => void;
     stop: () => void;
-  };
+  }
 
   export type RawMonitorMessageData = {
     [K in keyof SubTypeMap]: SubTypeMap[K] extends infer S
@@ -86,8 +94,9 @@ declare namespace Monitor {
         ? {
             type: K;
             info: {
-                subType: S;
-                pageUrl: string;
+              subType: S;
+              pageUrl: string;
+              timeStamp: number;
             } & (S extends keyof SubTypeExtraInfoMap
               ? SubTypeExtraInfoMap[S]
               : {});
@@ -99,7 +108,9 @@ declare namespace Monitor {
   export interface MonitorConfig {
     error: {
       enable: boolean;
-      customErrorMonitor: Array<(stream$: Subject<RawMonitorMessageData>) => void>
+      customErrorMonitor: Array<
+        (stream$: Subject<RawMonitorMessageData>) => void
+      >;
     };
     performance: {
       enable: boolean;
@@ -114,11 +125,27 @@ declare namespace Monitor {
         threshold: number; //白屏判定阈值
         checkDelay: number; //页面加载后开始检测的延迟
       };
-      customPerformanceMonitor: Array<(stream$: Subject<RawMonitorMessageData>) => void>
+      longTask: {
+        longTaskThreshold: number;
+      };
+      pageBlock: {
+        checkCount: number;
+        blockTime: number;
+      }
+      resource: {
+        imgSizeThreshold: number;
+        scriptSizeThreshold: number;
+        cssSizeThreshold: number;
+        fontSizeThreshold: number;
+        extraMediaSizeThreshold: number;
+      };
+      customPerformanceMonitor: Array<
+        (stream$: Subject<RawMonitorMessageData>) => void
+      >;
     };
-    userAction: {
-      enable: boolean;
-    };
+    // userAction: {
+    //   enable: boolean;
+    // };
     pageView: {
       enable: boolean;
     };

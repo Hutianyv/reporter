@@ -9,7 +9,7 @@ export function NormalLocaltimePlugin(Builder: Builder) {
   Builder.hooks.beforeBuild.tapSync((RawMonitorMessageData: ReporterMessage) => {
     // 这里注入上报时间信息
     RawMonitorMessageData.reportTimeStamp = Date.now();
-    console.log("NormalLoggetPlugin ready");
+    console.log("[ NormalLocalTimePlugin ] processing...");
   });
 }
 

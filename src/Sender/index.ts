@@ -16,9 +16,6 @@ class Sender {
   constructor(ConfigManager: ConfigManager) {
     this.config = ConfigManager.getSenderConfig();
     switch (this.config.strategy) {
-      case "beacon":
-        this.senderInstance = sendBeacon.bind(this);
-        break;
       case "image":
         this.senderInstance = sendImage.bind(this);
         break;
@@ -29,12 +26,9 @@ class Sender {
 
   send(ReporterMessage: ReporterMessage) {
     try {
-      this.hooks.beforeBuild.callSync(ReporterMessage);
-      console.log("在上报中");
-
+      this.hooks.beforeSend.callSync(ReporterMessage);
       this.senderInstance("", ReporterMessage);
-
-      this.hooks.afterBuild.callSync(ReporterMessage);
+      this.hooks.afterSend.callSync(ReporterMessage);
     } catch (error) {
       this.hooks.onError.callSync(error);
     }

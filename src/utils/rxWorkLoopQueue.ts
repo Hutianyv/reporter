@@ -1,4 +1,4 @@
-import { Subject, Subscription, retry } from 'rxjs';
+import { Subject, Subscription } from 'rxjs';
 
 export class RxQueue<T> {
   //输入流封闭在内部
@@ -47,9 +47,9 @@ export class RxQueue<T> {
 
       if (this.pendingQueue.size > 0) {
         this.scheduleIdleProcessing();
-      } else {
-        this.isProcessing = false;
       }
+        this.isProcessing = false;
+      
     }, { timeout: this.config.timeout });
   }
 /**

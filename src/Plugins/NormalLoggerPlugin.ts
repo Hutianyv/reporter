@@ -6,7 +6,7 @@
 import { pluginName } from '@/types/Client';
 export function NormalLoggerPlugin(Client: any) {
   Client.hooks.ready.tapSync(() => {
-    console.log("NormalLoggetPlugin ready");
+    console.log("[NormalLoggerPlugin] ready");
   });
 }
 NormalLoggerPlugin.type = 'client' as pluginName

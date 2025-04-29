@@ -9,7 +9,7 @@ import { tapable } from "@/utils/tapable";
 import ConfigManager from "@/ConfigManager";
 import { ReporterMessage } from "@/types";
 import { EMPTY, Observable, Subject, defer, of } from "rxjs";
-import { tap, catchError, mergeMap } from "rxjs/operators";
+import { catchError, mergeMap } from "rxjs/operators";
 
 class Builder {
   config: Builder.BuilderConfig;

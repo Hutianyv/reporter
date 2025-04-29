@@ -3,7 +3,8 @@
  */
 
 import { tapable } from "@/utils/tapable";
-import { Subject } from "rxjs";
+import { Subject, fromEventPattern } from "rxjs";
+import { empty } from "uuidv4";
 
 interface LayoutShift extends PerformanceEntry {
   value: number;
@@ -34,22 +35,24 @@ interface EnhancedPerformance extends Performance {
 }
 
 class PerformanceMontior {
-  private hooks = tapable(["beforeStart", "afterStart", "onError"]);
+  private hooks = tapable([
+    "beforeInit",
+    "beforeStart",
+    "afterStart",
+    "onError",
+  ]);
   private config: Monitor.MonitorConfig["performance"];
-   public readonly stream$ = new Subject<Monitor.RawMonitorMessageData>();
+  public readonly stream$ = new Subject<Monitor.RawMonitorMessageData>();
   private observers: PerformanceObserver[] = [];
-  private longTaskThreshold = 50; //这个长任务阈值给个50ms，先这样吧，但是怀疑现在代码里肯定一堆大于50ms的任务hhh
-  private readonly MAX_SAMPLE_RATE = 0.1; //10%采样率
+  private idleCallbackIds: number[] = [];
+  private animationFrameIds: number[] = [];
 
-  constructor(
-    errorMonitorConfig: Monitor.MonitorConfig["performance"],
-  ) {
+  constructor(errorMonitorConfig: Monitor.MonitorConfig["performance"]) {
     this.config = errorMonitorConfig;
-    this.hooks.beforeInit.callSync();
-    this.start();
+    this.hooks.beforeInit.callSync(this);
   }
   start() {
-    this.hooks.beforeStart.callSync();
+    this.hooks.beforeStart.callSync(this);
     //开始监控
     try {
       //核心性能指标监控
@@ -57,16 +60,16 @@ class PerformanceMontior {
       //高级性能指标监控
       this.setupAdvancedMonitoring();
       //自定义性能指标监控
-    if (this.config.customPerformanceMonitor.length > 0) { 
-      this.config.customPerformanceMonitor.forEach((item) => {
-        item(this.stream$);
-      });
-    }
+      if (this.config.customPerformanceMonitor.length > 0) {
+        this.config.customPerformanceMonitor.forEach((item) => {
+          item(this.stream$);
+        });
+      }
     } catch (error) {
       //TODO: 在这里进行retry重新开启监控，其他的地方也看看加上onerror这个生命周期
     }
 
-    this.hooks.afterStart.callSync();
+    this.hooks.afterStart.callSync(this);
   }
   stop() {
     //停止监控
@@ -75,72 +78,72 @@ class PerformanceMontior {
   //======================= 核心性能指标 =======================
   private setupCoreMetrics() {
     //导航计时（类似dns解析事件，网络传输时间，dom解析完成时间等等）
-      this.observeNavigationTiming();
-
+    this.observeNavigationTiming();
     //绘制指标 (FP/FCP/LCP/CLS，常见的web vitals)
-      this.observePaintMetrics();
-
+    this.observePaintMetrics();
     //资源加载性能
-      this.observeResourceLoading();
-
+    this.observeResourceLoading();
     //长任务监控
-      this.observeLongTasks();
+    this.observeLongTasks();
   }
 
   //具体方法实现
   private observeNavigationTiming() {
-    const handleNavigationEntry = (entry: PerformanceNavigationTiming) => {
-      const timingData = {
-        dns: entry.domainLookupEnd - entry.domainLookupStart,
-        tcp: entry.connectEnd - entry.connectStart,
-        ssl:
-          entry.secureConnectionStart > 0
-            ? entry.connectEnd - entry.secureConnectionStart
-            : 0,
-        ttfb: entry.responseStart - entry.requestStart,
-        download: entry.responseEnd - entry.responseStart,
-        domReady: entry.domContentLoadedEventEnd - entry.startTime,
-        fullLoad: entry.loadEventStart - entry.startTime,
-        transferSize: entry.transferSize,
-        encodedBodySize: entry.encodedBodySize,
-        decodedBodySize: entry.decodedBodySize,
-      };
-
-      this.stream$.next({
-        type: "performance",
-        info: {
-          subType: "navigation",
-          pageUrl: window.location.href,
-          ...timingData,
-        },
+    if (!this.isSupported("navigation")) return;
+    const handleNavigationEntry = (entries: PerformanceEntryList) => {
+      entries.forEach((entry) => {
+        const navEntry = entry as PerformanceNavigationTiming;
+        const timingData = {
+          navigationType: navEntry.type,
+          dns: navEntry.domainLookupEnd - navEntry.domainLookupStart,
+          tcp: navEntry.connectEnd - navEntry.connectStart,
+          ssl:
+            navEntry.secureConnectionStart > 0
+              ? navEntry.connectEnd - navEntry.secureConnectionStart
+              : 0,
+          ttfb: navEntry.responseStart - navEntry.requestStart,
+          download: navEntry.responseEnd - navEntry.responseStart,
+          domReady: navEntry.domContentLoadedEventEnd - navEntry.startTime,
+          fullLoad: navEntry.loadEventStart,
+          transferSize: navEntry.transferSize,
+          encodedBodySize: navEntry.encodedBodySize,
+          decodedBodySize: navEntry.decodedBodySize,
+        };
+        if (timingData.fullLoad !== 0) {
+          this.stream$.next({
+            type: "performance",
+            info: {
+              subType: "navigation",
+              pageUrl: window.location.href,
+              timeStamp: Date.now(),
+              ...timingData,
+            },
+          });
+        }
       });
     };
 
-    if (this.isSupported("navigation")) {
-      const entries = performance.getEntriesByType("navigation");
-      if (entries.length)
-        handleNavigationEntry(entries[0] as PerformanceNavigationTiming);
-    }
+    this.createObserver("navigation", handleNavigationEntry);
   }
   private observePaintMetrics() {
     if (!this.isSupported("paint")) return;
-    //首次绘制指标
-    const paintEntries = performance.getEntriesByType("paint");
-    const fcpEntry = paintEntries.find(
-      (entry) => entry.name === "first-contentful-paint"
-    );
-
-    if (fcpEntry) {
-      this.stream$.next({
-        type: "performance",
-        info: {
-          subType: "paint",
-          extraDesc: "fcp",
-          pageUrl: window.location.href,
-          value: fcpEntry.startTime,
-        },
+    //首次绘制FCP监控
+    this.createObserver("paint", (entries) => {
+      entries.forEach((entry) => {
+        if (entry.name === "first-contentful-paint") {
+          this.stream$.next({
+            type: "performance",
+            info: {
+              subType: "paint",
+              timeStamp: Date.now(),
+              extraDesc: "fcp",
+              pageUrl: window.location.href,
+              startTime: entry.startTime,
+            },
+          });
+        }
       });
-    }
+    });
     //LCP监控
     this.createObserver("largest-contentful-paint", (entries) => {
       const lastEntry = entries[entries.length - 1] as LargestContentfulPaint;
@@ -150,7 +153,8 @@ class PerformanceMontior {
           subType: "paint",
           extraDesc: "lcp",
           pageUrl: window.location.href,
-          value: lastEntry.renderTime || lastEntry.loadTime,
+          timeStamp: Date.now(),
+          renderTime: lastEntry.renderTime || lastEntry.loadTime,
           element: lastEntry.element?.tagName,
           size: lastEntry.size,
           url: lastEntry.url,
@@ -158,7 +162,7 @@ class PerformanceMontior {
       });
     });
 
-    //CLS监控  TODO: 可能这里的individualShifts还不够详细emmm，之后要改
+    //CLS监控
     let clsValue = 0;
     let lastCLSReportTime = 0;
     const REPORT_INTERVAL = 5000;
@@ -172,7 +176,7 @@ class PerformanceMontior {
         .map((entry: LayoutShift) => {
           clsValue += entry.value;
           return {
-            value: entry.value,
+            shiftValue: entry.value,
             sources: entry.sources?.map((s) => s.node?.toString()),
             timestamp: entry.startTime,
             duration: entry.duration,
@@ -188,7 +192,8 @@ class PerformanceMontior {
             subType: "paint",
             extraDesc: "cls",
             pageUrl: window.location.href,
-            value: clsValue,
+            timeStamp: Date.now(),
+            clsValue: clsValue,
             individualShifts: individualShifts,
           },
         });
@@ -197,16 +202,18 @@ class PerformanceMontior {
   }
 
   private observeResourceLoading() {
+    if (!this.isSupported("resource")) return;
     this.createObserver("resource", (entries) => {
       entries.forEach((entry) => {
-        if (Math.random() > this.MAX_SAMPLE_RATE) return;
-
         const resourceEntry = entry as PerformanceResourceTiming;
+        if (resourceEntry.encodedBodySize < this.getThreshold(resourceEntry))
+          return;
         this.stream$.next({
           type: "performance",
           info: {
             subType: "resource",
             pageUrl: window.location.href,
+            timeStamp: Date.now(),
             initiatorType: resourceEntry.initiatorType,
             url: resourceEntry.name,
             duration: resourceEntry.duration,
@@ -219,19 +226,27 @@ class PerformanceMontior {
   }
 
   private observeLongTasks() {
+    if (!this.isSupported("longtask")) return;
     this.createObserver("longtask", (entries) => {
       entries.forEach((entry) => {
         const longTaskEntry = entry as PerformanceLongTaskTiming;
-        if (longTaskEntry.duration > this.longTaskThreshold) {
+        if (longTaskEntry.duration > this.config.longTask.longTaskThreshold) {
+          const attributions = longTaskEntry.attribution.map((attr) => ({
+            containerType: attr.containerType,
+            containerSrc: attr.containerSrc,
+            containerId: attr.containerId,
+            containerName: attr.containerName,
+          }));
           this.stream$.next({
             type: "performance",
             info: {
               subType: "longTask",
               pageUrl: window.location.href,
+              timeStamp: Date.now(),
+              name: longTaskEntry.name,
+              startTime: longTaskEntry.startTime,
               duration: longTaskEntry.duration,
-              container:
-                longTaskEntry.attribution[0]?.containerType || "window",
-              context: longTaskEntry.attribution[0]?.containerSrc,
+              attributions: attributions,
             },
           });
         }
@@ -252,135 +267,200 @@ class PerformanceMontior {
     // 3. 页面卡顿监控
     this.observePageBlock();
   }
-
+  // =================================内存监控==================================
   private observeMemoryUsage() {
-    if (!("memory" in performance)) return;
+    if (!this.isSupported("memory")) return;
 
     let lastUsedJSHeap = 0;
     let growthCount = 0;
     const perf = window.performance as EnhancedPerformance;
     const checkMemory = () => {
-      const { totalJSHeapSize, usedJSHeapSize } = perf.memory!;
+      try {
+        const { totalJSHeapSize, usedJSHeapSize } = perf.memory!;
+        const usedMB = +(usedJSHeapSize / 1024 / 1024).toFixed(2);
+        const totalMB = +(totalJSHeapSize / 1024 / 1024).toFixed(2);
 
-      const usedMB = +(usedJSHeapSize / 1024 / 1024).toFixed(2);
-      const totalMB = +(totalJSHeapSize / 1024 / 1024).toFixed(2);
+        this.checkMemoryLeak(usedMB, lastUsedJSHeap, growthCount);
+        this.checkMemoryOverflow(usedMB, totalMB);
 
-      //内存泄漏
-      if (usedMB > lastUsedJSHeap) {
-        growthCount++;
-        if (growthCount >= this.config.memory.leakThreshold) {
-          this.stream$.next({
-            type: "performance",
-            info: {
-              subType: "memory",
-              extraDesc: "memoryLeak",
-              pageUrl: window.location.href,
-              usedMB: usedMB,
-            },
-          });
-        }
-      } else {
-        growthCount = 0;
+        lastUsedJSHeap = usedMB;
+      } catch (error) {
+        console.error("内存监控发生错误:", error);
       }
+    };
 
-      //内存使用超过绝对阈值
-      if (usedMB > this.config.memory.maxUsageAlert) {
-        this.stream$.next({
-          type: "performance",
-          info: {
-            subType: "memory",
-            extraDesc: "memoryOverflow",
-            pageUrl: window.location.href,
-            maxUsageAlert: this.config.memory.maxUsageAlert,
-            totalMB: totalMB,
-            usedMB: usedMB,
-          },
-        });
-      }
-      lastUsedJSHeap = usedMB;
-
+    let currentFrameId: number | null = null;
+    const startMonitoring = () => {
       let lastRun = 0;
-      const checkWithRAF = () =>{
+      const checkWithRAF = () => {
         const now = Date.now();
         if (now - lastRun >= this.config.memory.samplingInterval) {
           checkMemory();
           lastRun = now;
         }
-        requestAnimationFrame(checkWithRAF);
-      }
+        if ("requestAnimationFrame" in window) {
+          if (currentFrameId !== null) {
+            const index = this.animationFrameIds.indexOf(currentFrameId);
+            if (index > -1) {
+              this.animationFrameIds.splice(index, 1);
+            }
+          }
+          currentFrameId = requestAnimationFrame(checkWithRAF);
+          this.animationFrameIds.push(currentFrameId);
+        }
+      };
 
       if ("requestAnimationFrame" in window) {
-        requestAnimationFrame(checkWithRAF);
+        currentFrameId = requestAnimationFrame(checkWithRAF);
+        this.animationFrameIds.push(currentFrameId);
       } else {
-        setTimeout(checkMemory, this.config.memory.samplingInterval);
+        setInterval(checkMemory, this.config.memory.samplingInterval);
       }
     };
+    startMonitoring();
+  }
+
+  private checkMemoryLeak(
+    usedMB: number,
+    lastUsedJSHeap: number,
+    growthCount: number
+  ) {
+    if (usedMB > lastUsedJSHeap) {
+      growthCount++;
+      if (growthCount >= this.config.memory.leakThreshold) {
+        this.stream$.next({
+          type: "performance",
+          info: {
+            subType: "memory",
+            extraDesc: "memoryLeak",
+            pageUrl: window.location.href,
+            timeStamp: Date.now(),
+            usedMB: usedMB,
+          },
+        });
+      }
+    } else {
+      growthCount = 0;
+    }
+  }
+
+  private checkMemoryOverflow(usedMB: number, totalMB: number) {
+    if (usedMB > this.config.memory.maxUsageAlert) {
+      this.stream$.next({
+        type: "performance",
+        info: {
+          subType: "memory",
+          extraDesc: "memoryOverflow",
+          pageUrl: window.location.href,
+          timeStamp: Date.now(),
+          maxUsageAlert: this.config.memory.maxUsageAlert,
+          totalMB: totalMB,
+          usedMB: usedMB,
+        },
+      });
+    }
   }
   private observeWhiteScreen() {
+    const GAP_TIME = 6000;
+    let lastCheckTime = 0;
+    let currentFrameId: number | null = null;
+
     const performWhiteScreenCheck = () => {
+      const now = Date.now();
+      if (now - lastCheckTime < GAP_TIME) {
+        if ("requestAnimationFrame" in window) {
+          currentFrameId = requestAnimationFrame(performWhiteScreenCheck);
+          if (currentFrameId !== null) {
+            const index = this.animationFrameIds.indexOf(currentFrameId);
+            if (index === -1) {
+              this.animationFrameIds.push(currentFrameId);
+            }
+          }
+        }
+        return;
+      }
+
       let emptyPoints = 0;
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
-  
       const getCheckPoints = (total: number) =>
         Array.from({ length: total }, (_, i) => (i + 1) / (total + 1));
-  
-      getCheckPoints(9).forEach(ratio => {
-        const element = document.elementFromPoint(viewportWidth * ratio, viewportHeight / 2);
+
+      getCheckPoints(9).forEach((ratio) => {
+        const element = document.elementFromPoint(
+          viewportWidth * ratio,
+          viewportHeight / 2
+        );
         if (isWrapperElement(element)) emptyPoints++;
       });
-  
-      getCheckPoints(9).forEach(ratio => {
-        const element = document.elementFromPoint(viewportWidth / 2, viewportHeight * ratio);
+
+      getCheckPoints(9).forEach((ratio) => {
+        const element = document.elementFromPoint(
+          viewportWidth / 2,
+          viewportHeight * ratio
+        );
         if (isWrapperElement(element)) emptyPoints++;
       });
-  
+
       if (emptyPoints >= this.config.whiteScreen.threshold) {
         reportWhiteScreen(emptyPoints);
       }
-    };
-  
-    const isWrapperElement = (element: Element | null) => {
-      if (!element) return true; // 容错：无法获取元素视为白屏点
-      return this.config.whiteScreen.wrapperSelectors.some(selector =>
-        element.matches(selector)
-      );
-    };
-  
-    const reportWhiteScreen = (emptyPoints: number) => {
-      this.stream$.next({
-        type: 'performance',
-        info: {
-          subType: 'whiteScreen',
-          pageUrl: window.location.href,
-          emptyPoints,
+
+      lastCheckTime = now;
+      if ("requestAnimationFrame" in window) {
+        if (currentFrameId !== null) {
+          const index = this.animationFrameIds.indexOf(currentFrameId);
+          if (index > -1) {
+            this.animationFrameIds.splice(index, 1);
+          }
         }
-      });
-    }
-  
-    const checkAtIdlePeriod = () => {
-      if ('requestIdleCallback' in window) {
-        (window as any).requestIdleCallback(() => {
-          performWhiteScreenCheck();
-        }, { timeout: this.config.whiteScreen.checkDelay });
-      } else {
-        setTimeout(performWhiteScreenCheck, this.config.whiteScreen.checkDelay);
+        currentFrameId = requestAnimationFrame(performWhiteScreenCheck);
+        this.animationFrameIds.push(currentFrameId);
       }
     };
 
-    if (document.readyState === 'complete') {
-      checkAtIdlePeriod();
+    const isWrapperElement = (element: Element | null) => {
+      if (!element) return true; //容错：无法获取元素视为白屏点
+      return this.config.whiteScreen.wrapperSelectors.some((selector) =>
+        element.matches(selector)
+      );
+    };
+
+    const reportWhiteScreen = (emptyPoints: number) => {
+      this.stream$.next({
+        type: "performance",
+        info: {
+          subType: "whiteScreen",
+          pageUrl: window.location.href,
+          timeStamp: Date.now(),
+          emptyPoints,
+        },
+      });
+    };
+
+    // 启动检查
+    if ("requestAnimationFrame" in window) {
+      setTimeout(() => {
+        currentFrameId = requestAnimationFrame(performWhiteScreenCheck);
+        this.animationFrameIds.push(currentFrameId);
+      }, this.config.whiteScreen.checkDelay);
     } else {
-      window.addEventListener('load', checkAtIdlePeriod);
+      // 如果不支持 RAF，使用 setTimeout 实现间隔检查
+      setTimeout(() => {
+        setInterval(() => {
+          performWhiteScreenCheck();
+        }, GAP_TIME);
+      }, this.config.whiteScreen.checkDelay);
     }
   }
   private observePageBlock() {
-    if (!('requestAnimationFrame' in window)) return;
-    const CHECK_COUNT = 2 //TODO: 应来自配置项
-    const BLOCK_TIME = 100
+    if (!("requestAnimationFrame" in window)) return;
+    const CHECK_COUNT = this.config.pageBlock.checkCount;
+    const BLOCK_TIME = this.config.pageBlock.blockTime;
 
     let unmetCount = 0; // 不满足阈值的次数
     let lastFrameTime = 0;
+    let currentFrameId: number | null = null;
 
     const checkFrame = (currentFrameTime: DOMHighResTimeStamp) => {
       if (currentFrameTime - lastFrameTime >= BLOCK_TIME) {
@@ -391,6 +471,7 @@ class PerformanceMontior {
             info: {
               subType: "pageBlock",
               pageUrl: window.location.href,
+              timeStamp: Date.now(),
             },
           });
         }
@@ -398,39 +479,77 @@ class PerformanceMontior {
         unmetCount = 0;
       }
       lastFrameTime = currentFrameTime;
-      requestAnimationFrame(checkFrame);
+      if (currentFrameId !== null) {
+        const index = this.animationFrameIds.indexOf(currentFrameId);
+        if (index > -1) {
+          this.animationFrameIds.splice(index, 1);
+        }
+      }
+      currentFrameId = requestAnimationFrame(checkFrame);
+      this.animationFrameIds.push(currentFrameId);
     };
-    requestAnimationFrame(checkFrame);
+    currentFrameId = requestAnimationFrame(checkFrame);
+    this.animationFrameIds.push(currentFrameId);
   }
 
-  //======================= 自定义指标 =======================
-  // private setupCustomMetrics() {
-  //   // 业务自定义指标示例
-  //   performance.mark("custom-metric-start");
-  //   window.addEventListener("custom-event", () => {
-  //     performance.measure("custom-metric", "custom-metric-start");
-  //   });
-  // }
-
-  //======================= 工具方法 =======================
+  //======================= 创建性能监控对象方法 =======================
   private createObserver(
     type: string,
     callback: (entries: PerformanceEntryList) => void
   ) {
-    try {
-      const observer = new PerformanceObserver((list) =>
-        callback(list.getEntries())
-      );
+    const addHandler = (
+      handler: (list: PerformanceObserverEntryList) => void
+    ) => {
+      const observer = new PerformanceObserver((list) => handler(list));
       observer.observe({ type, buffered: true });
       this.observers.push(observer);
-    } catch (error) {
-      this.hooks.onError.callSync(error);
-    }
+      return observer;
+    };
+
+    const removeHandler = (subscription: any) => {
+      const observer = subscription as PerformanceObserver;
+      observer.disconnect();
+      const index = this.observers.indexOf(observer);
+      if (index > -1) {
+        this.observers.splice(index, 1);
+      }
+    };
+    fromEventPattern<PerformanceObserverEntryList>(
+      addHandler,
+      removeHandler
+    ).subscribe((list: PerformanceObserverEntryList) => {
+      callback(list.getEntries());
+    });
+  }
+
+  //======================= 计算资源阈值大小 ==========================
+  private getThreshold(entry: PerformanceResourceTiming) {
+    const isFont = ["font", "woff", "woff2", "ttf", "otf", "eot"].some((ext) =>
+      entry.name.includes(ext)
+    );
+    if (entry.initiatorType === "img")
+      return this.config.resource.imgSizeThreshold;
+    if (entry.initiatorType === "script")
+      return this.config.resource.scriptSizeThreshold;
+    if (entry.initiatorType === "link" && entry.name.endsWith(".css"))
+      return this.config.resource.cssSizeThreshold;
+    if (isFont) return this.config.resource.fontSizeThreshold;
+    return this.config.resource.extraMediaSizeThreshold;
   }
 
   private disconnect() {
     this.observers.forEach((observer) => observer.disconnect());
     this.observers = [];
+    this.idleCallbackIds.forEach((id) => {
+      if ("cancelIdleCallback" in window) {
+        (window as any).cancelIdleCallback(id);
+      }
+    });
+    this.idleCallbackIds = [];
+    this.animationFrameIds.forEach((id) => {
+      cancelAnimationFrame(id);
+    });
+    this.animationFrameIds = [];
   }
 
   //========================= 兼容性检查 ========================
@@ -440,6 +559,7 @@ class PerformanceMontior {
       paint: () => "PerformancePaintTiming" in window,
       longtask: () => "PerformanceLongTaskTiming" in window,
       resource: () => "PerformanceResourceTiming" in window,
+      memory: () => "memory" in performance,
     };
 
     return featureMap[api]?.() ?? false;

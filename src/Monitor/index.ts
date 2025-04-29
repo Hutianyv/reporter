@@ -37,7 +37,7 @@ const MONITOR_REGISTRY: Record<
   error: ErrorMonitor,
   performance: PerformanceMonitor,
   //@ts-ignore
-  userAction: UserActionMonitor,
+  // userAction: UserActionMonitor,
   pageView: PageViewMonitor,
 };
 export interface MonitorStreamConfig {
@@ -57,16 +57,26 @@ class MainMonitor {
   private monitors: Partial<
     Record<keyof Monitor.MonitorConfig, Monitor.MonitorInstance>
   > = {};
-  private MainPipeline$ = new Subject();
   private RawMonitorMessageStream$ =
     new Subject<Monitor.RawMonitorMessageData>();
   private subscriptions = new Subscription();
-  public readonly mainStream$ = this.RawMonitorMessageStream$.asObservable();
+  public mainStream$: Observable<Monitor.RawMonitorMessageData>;
   constructor(configManager: ConfigManager) {
     this.config = configManager.getMonitorConfig();
-    this.hooks.beforeInit.callSync();
+    this.hooks.beforeInit.callSync(this.config);
 
     this.initializeMonitors();
+
+    const mergedConfig = { ...DEFAULT_CONFIG, ...this.config };
+    this.mainStream$ = this.RawMonitorMessageStream$
+      .pipe(
+        bufferTime(mergedConfig.bufferTime),
+        mergeMap((buffer) => buffer, mergedConfig.concurrency),
+        catchError((error) => {
+          console.error("[Monitor] Pipeline error:", error);
+          return EMPTY;
+        })
+      )
   }
 
   private initializeMonitors() {
@@ -91,33 +101,16 @@ class MainMonitor {
     );
   }
 
-  private setupDataPipeline(config: MonitorStreamConfig = DEFAULT_CONFIG) {
-    const mergedConfig = { ...DEFAULT_CONFIG, ...config };
-
-    this.subscriptions.add(
-      this.mainStream$
-        .pipe(
-          bufferTime(mergedConfig.bufferTime),
-          mergeMap((buffer) => buffer, mergedConfig.concurrency),
-          catchError((error) => {
-            console.error("[Monitor] Pipeline error:", error);
-            return EMPTY;
-          })
-        )
-        .subscribe()
-    );
-  }
 
   start() {
     if (this.isStarted) return;
-    this.hooks.beforeStart.callSync();
+    this.hooks.beforeStart.callSync(this.config);
     // 开始监控
     try {
       Object.values(this.monitors).forEach((monitor) => {
         monitor?.start();
       });
 
-      this.setupDataPipeline();
       this.isStarted = true;
     } catch (err) {
       console.log(err);
@@ -125,7 +118,7 @@ class MainMonitor {
   }
 
   stop() {
-    this.hooks.beforeStop.callSync();
+    this.hooks.beforeStop.callSync(this.config);
     // 停止监控
     try {
       Object.values(this.monitors).forEach((monitor) => {
@@ -133,7 +126,6 @@ class MainMonitor {
       });
     } catch (err) {
       console.log(err);
-      this.MainPipeline$?.unsubscribe();
       this.subscriptions.unsubscribe();
       this.subscriptions = new Subscription();
       this.isStarted = false;

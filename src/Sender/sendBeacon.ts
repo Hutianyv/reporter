@@ -12,7 +12,6 @@ export const sendBeacon = <T extends Record<string, unknown>>(
   if (!("sendBeacon" in navigator)) {
     return fallback ? fallbackToXHR(url, data, json) : false;
   }
-
   if (!isValidURL(url)) {
     throw new Error("Invalid URL format");
   }
@@ -36,7 +35,6 @@ export const sendBeacon = <T extends Record<string, unknown>>(
       //删除 Content-Type 让浏览器自动生成 boundary
       delete headers["Content-Type"];
     }
-
     return navigator.sendBeacon(url, payload);
   } catch (error) {
     console.error("[Beacon] Error:", error);

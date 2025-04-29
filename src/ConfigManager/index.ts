@@ -3,11 +3,11 @@
 * 一般需要传入默认配置，支持用户手动配置，当配置完成时， ConfigManager 会变更 ready 状态，所以它也支持被订阅，以便当 ready 时或者配置变更时通知到订阅方。
 */
 import { tapable } from "@/utils/tapable";
-import { baseConfig } from "./baseConfig";
+// import { baseConfig } from "./baseConfig";
 import { RiverConfig } from "@/types";
 
 class ConfigManager {
-    private tapableHooks = ['init', 'beforeApplyDefaultConfig', 'beforeApplyPlugin','beforeReady']
+    private tapableHooks = ['init', 'beforeApplyDefaultConfig', 'beforeApplyPlugin','beforeReady','ready']
 
     private hooks = tapable(this.tapableHooks);
     private config: Partial<RiverConfig> = {}
@@ -16,19 +16,19 @@ class ConfigManager {
         this.config = config
        this.initTapDefaultHooks()
         //触发ConfigManager的整个初始化流程
-        this.hooks.init.callSync()
+        this.hooks.init.callSync(config)
     }
 
     //初始化整个默认hook的挂载流程
     initTapDefaultHooks = () => {
         this.hooks.init.tapSync(() => {
             //@ts-ignore
-            this.applyBasedDefaultConfig(baseConfig, this.config)
-            this.hooks.beforeReady.callSync()
+            this.applyBasedDefaultConfig({}, this.config)
+            this.hooks.beforeReady.callSync(this.config)
         })
         this.hooks.beforeReady.tapSync(() => {
             this.ready = true
-            this.hooks.ready.callSync()
+            this.hooks.ready.callSync(this.config)
         })
     }
 
@@ -36,20 +36,21 @@ class ConfigManager {
     applyBasedDefaultConfig = (baseConfig: RiverConfig, customConfig: RiverConfig) => {
         //这里将默认配置合并到config中，
         //比如jserror的各种配置没给，那我给他变成正常的格式，给他默认值
-        function mergeConfig(defaultConfig: RiverConfig, customConfig: RiverConfig) {
-            for (let key in defaultConfig) {
-                let typedKey = key as keyof RiverConfig
-                if (customConfig[typedKey] === undefined) {
-                    customConfig[typedKey] = defaultConfig[typedKey]
-                } else if (typeof customConfig[typedKey] === 'object') {
-                    mergeConfig(defaultConfig[typedKey], customConfig[typedKey])
-                }
-            }
-        }
+        // function mergeConfig(defaultConfig: RiverConfig, customConfig: RiverConfig) {
+        //     for (let key in defaultConfig) {
+        //         let typedKey = key as keyof RiverConfig
+        //         if (customConfig[typedKey] === undefined) {
+        //             customConfig[typedKey] = defaultConfig[typedKey]
+        //         } else if (typeof customConfig[typedKey] === 'object') {
+        //             mergeConfig(defaultConfig[typedKey], customConfig[typedKey])
+        //         }
+        //     }
+        // }
 
-        this.hooks.beforeApplyDefaultConfig.callSync()
-        return mergeConfig(baseConfig, customConfig)
-      
+        // this.hooks.beforeApplyDefaultConfig.callSync()
+        // return mergeConfig(baseConfig, customConfig)
+        
+      return customConfig
     }
 
     getMonitorConfig = (): Monitor.MonitorConfig => {
@@ -58,7 +59,7 @@ class ConfigManager {
         return {
             error: this.config.monitor!.error,
             performance: this.config.monitor!.performance,
-            userAction: this.config.monitor!.userAction,
+            // userAction: this.config.monitor!.userAction,
             pageView: this.config.monitor!.pageView
         }
     }

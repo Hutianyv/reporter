@@ -4,7 +4,7 @@ import MainMonitor from "@/Monitor";
 import Builder from "@/Builder";
 import Sender from "@/Sender";
 import { Plugin, pluginName } from "@/types/Client";
-import { NormalLoggerPlugin } from "@/Plugins/NormalLoggerPlugin";
+// import { NormalLoggerPlugin } from "@/Plugins/NormalLoggerPlugin";
 import { NormalLocaltimePlugin } from "@/Plugins/NormalLocaltimePlugin";
 import { NormalUserAgentPlugin } from "@/Plugins/NormalUserAgentPlugin";
 import { NormalIdPlugin } from "@/Plugins/NormalIdPlugin";
@@ -27,7 +27,7 @@ export const createClient = (config: RiverConfig) => {
   let sender: Sender;
 
   const normalPlugin: Plugin[] = [
-    NormalLoggerPlugin,
+    // NormalLoggerPlugin,
     NormalLocaltimePlugin,
     NormalUserAgentPlugin,
     NormalIdPlugin,
@@ -43,13 +43,13 @@ export const createClient = (config: RiverConfig) => {
         sender = new Sender(configManager);
         //应用所有插件
         applyPlugin(normalPlugin, config.plugins);
-        isStart = true;
       });
       inited = true;
     },
 
     start: () => {
       if (!inited || isStart) return;
+      isStart = true;
       monitor.start();
       //将数据流串连起来
       concatStream();
@@ -75,7 +75,7 @@ export const createClient = (config: RiverConfig) => {
       error: (e) => console.error("Build stream error:", e),
     });
     builder.output$.subscribe({
-      next: (data) => sender.send(data),
+      next: (data) => { sender.send(data); console.log(data) },
       error: (e) => console.error("Send stream error:", e),
     });
   }

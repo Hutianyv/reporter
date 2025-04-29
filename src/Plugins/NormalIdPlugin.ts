@@ -32,7 +32,7 @@ export async function NormalIdPlugin(Builder: Builder) {
       // 这里注入userId和traceId
     RawMonitorMessageData.userId = userId as string;
     RawMonitorMessageData.traceId = traceId as string;
-    console.log("NormalLoggetPlugin ready");
+    console.log("[ NormalIdPlugin ] processing...");
   });
 }
 

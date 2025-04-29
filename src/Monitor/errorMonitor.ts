@@ -5,7 +5,7 @@
  */
 
 import { tapable } from "@/utils/tapable";
-import { Subject } from "rxjs";
+import { Subject, fromEvent } from "rxjs";
 class ErrorMontior {
   private hooks = tapable(["beforeStart"]);
   private config: Monitor.MonitorConfig["error"];
@@ -19,11 +19,9 @@ class ErrorMontior {
     this.config = errorMonitorConfig;
     this.originalXHR = window.XMLHttpRequest;
     this.originalFetch = window.fetch;
-
-    this.start();
   }
   start() {
-    this.hooks.beforeStart.callSync();
+    this.hooks.beforeStart.callSync(this.config);
     //开始监控
     this.listenRuntimeError();
     this.listenResourceError();
@@ -45,7 +43,8 @@ class ErrorMontior {
 
   //------------------------ 运行时错误监控 ------------------------
   private listenRuntimeError() {
-    window.addEventListener("error", (event) => {
+    fromEvent(window, 'error').subscribe((event: Event) => {
+      const errorEvent = event as ErrorEvent;
       //这里进行判断，如果是window下的错误，那么其实就是运行时的js错误，这里进行jserror的上报
       if (event.target !== window) return;
       this.stream$.next({
@@ -53,62 +52,61 @@ class ErrorMontior {
         info: {
           subType: "jsError",
           pageUrl: window.location.href,
-          errorMsg: event.message,
-          filename: event.filename,
-          line: event.lineno,
-          col: event.colno,
-          stack: event.error?.stack,
+          timeStamp: Date.now(),
+          errorMsg: errorEvent.message,
+          filename: errorEvent.filename,
+          line: errorEvent.lineno,
+          col: errorEvent.colno,
+          stack: errorEvent.error?.stack,
         },
       });
-      //监控埋点原则上不会影响页面的表现，所以不用阻止默认行为，该报错就报错
-      // event.preventDefault(); // 阻止默认错误打印（可选）
+      //   //监控埋点原则上不会影响页面的表现，所以不用阻止默认行为，该报错就报错
+    //   // event.preventDefault(); // 阻止默认错误打印（可选）
     });
   }
 
   //------------------------ 资源加载错误监控 ------------------------
   private listenResourceError() {
-    window.addEventListener(
-      "error",
-      (event) => {
-        const target = event.target as HTMLElement;
-        const isResourceError =
-          target.tagName === "IMG" ||
-          target.tagName === "SCRIPT" ||
-          target.tagName === "LINK";
+    fromEvent(window, 'error', { capture: true }).subscribe((event: Event) => {
+      const target = event.target as HTMLElement;
+      const isResourceError =
+        target.tagName === "IMG" ||
+        target.tagName === "SCRIPT" ||
+        target.tagName === "LINK";
 
-        if (isResourceError) {
-          this.stream$.next({
-            type: "error",
-            info: {
-              subType: "assetsError",
-              pageUrl: window.location.href,
-              resourceUrl:
-                (target as HTMLImageElement).src ||
-                (target as HTMLLinkElement).href ||
-                (target as HTMLScriptElement).src,
-              tagName: target.tagName,
-              outerHTML: target.outerHTML,
-            },
-          });
-        }
-      },
-      true //在捕获阶段监听（资源加载错误不会冒泡）
-    );
+      if (isResourceError) {
+        this.stream$.next({
+          type: "error",
+          info: {
+            subType: "assetsError",
+            pageUrl: window.location.href,
+            timeStamp: Date.now(),
+            resourceUrl:
+              (target as HTMLImageElement).src ||
+              (target as HTMLLinkElement).href ||
+              (target as HTMLScriptElement).src,
+            tagName: target.tagName,
+            outerHTML: target.outerHTML,
+          },
+        });
+      }
+    });
   }
 
   //------------------------ Promise 未处理错误监控 ------------------------
   private listenPromiseError() {
-    window.addEventListener("unhandledrejection", (event) => {
+    fromEvent(window, 'unhandledrejection').subscribe((event: Event) => {
+      const rejectionEvent = event as PromiseRejectionEvent;
       this.stream$.next({
         type: "error",
         info: {
           subType: "unhandledrejectionError",
           pageUrl: window.location.href,
-          reason: event.reason?.message || String(event.reason),
-          stack: event.reason?.stack,
+          timeStamp: Date.now(),
+          reason: rejectionEvent.reason?.message || String(rejectionEvent.reason),
+          stack: rejectionEvent.reason?.stack,
         },
       });
-      //event.preventDefault();
     });
   }
 
@@ -135,6 +133,7 @@ class ErrorMontior {
               info: {
                 subType: "ajaxError",
                 pageUrl: window.location.href,
+                timeStamp: Date.now(),
                 status: this.status,
                 statusText: this.statusText,
                 url: this.url,
@@ -165,6 +164,7 @@ class ErrorMontior {
           info: {
             subType: "ajaxError",
             pageUrl: window.location.href,
+            timeStamp: Date.now(),
             status: response.status,
             statusText: response.statusText,
             url: response.url,
